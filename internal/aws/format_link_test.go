@@ -6,26 +6,13 @@ import (
 )
 
 func TestLink(t *testing.T) {
-	tests := []struct {
-		label, provider, targetID, wantContains string
-	}{
-		{
-			label:        "my-function",
-			provider:     "Lambda",
-			targetID:     "my-function",
-			wantContains: `["link:Lambda:my-function"]`,
-		},
-		{
-			label:        "my-function",
-			provider:     "Lambda",
-			targetID:     "my-function",
-			wantContains: "[aqua::u]my-function",
-		},
-	}
-	for _, tc := range tests {
-		got := Link(tc.label, tc.provider, tc.targetID)
-		if !strings.Contains(got, tc.wantContains) {
-			t.Errorf("Link(%q,%q,%q) = %q, want to contain %q", tc.label, tc.provider, tc.targetID, got, tc.wantContains)
+	got := Link("my-function", "Lambda", "my-function")
+	for _, want := range []string{
+		`["link:Lambda:my-function"]`, // region tag encodes provider + targetID
+		"[aqua::u]my-function",        // label styled aqua underline
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Link() = %q, want to contain %q", got, want)
 		}
 	}
 }
