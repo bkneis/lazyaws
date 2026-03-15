@@ -239,6 +239,9 @@ func (a *App) loadTab(providerIdx, tabIdx int, item awspkg.Item) {
 	go func() {
 		content, err := tabs[tabIdx].Fetch(context.Background(), item)
 		a.tapp.QueueUpdateDraw(func() {
+			if a.activeProvider != providerIdx {
+				return // provider changed while fetch was in-flight
+			}
 			if err != nil {
 				a.tabCache[tabIdx] = fmt.Sprintf("[red]Error: %v[-]", err)
 			} else {
@@ -247,7 +250,6 @@ func (a *App) loadTab(providerIdx, tabIdx int, item awspkg.Item) {
 			a.tabLoaded[tabIdx] = true
 			// Cache S3 objects for row selection when the Objects tab finishes loading.
 			if s3p, ok := a.providers[providerIdx].(*awspkg.S3Provider); ok {
-				tabs := a.providers[providerIdx].Tabs()
 				if tabIdx < len(tabs) && tabs[tabIdx].Label == "Objects" {
 					a.cachedObjects = s3p.GetLastObjects()
 				}
@@ -336,7 +338,7 @@ func (a *App) isS3ObjectsTabFocused() bool {
 	if a.tapp.GetFocus() != a.panels.detail {
 		return false
 	}
-	if a.providers[a.activeProvider].Name() != "S3" {
+	if _, ok := a.providers[a.activeProvider].(*awspkg.S3Provider); !ok {
 		return false
 	}
 	tabs := a.providers[a.activeProvider].Tabs()
