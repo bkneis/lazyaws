@@ -31,6 +31,12 @@ type Provider interface {
 	Tabs() []TabDef
 }
 
+// Expandable is an optional interface providers can implement to support
+// the bottom expand panel. Enter on an item calls Expand and shows the result.
+type Expandable interface {
+	Expand(ctx context.Context, item Item) (string, error)
+}
+
 // filterItems returns items whose Name contains query (case-insensitive).
 // Returns items unchanged when query is empty.
 func filterItems(items []Item, query string) []Item {

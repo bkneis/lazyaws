@@ -62,6 +62,34 @@ func (a *App) build() {
 		}
 	})
 
+	a.panels.items.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() != tcell.KeyEnter {
+			return event
+		}
+		provider := a.providers[a.activeProvider]
+		exp, ok := provider.(awspkg.Expandable)
+		if !ok {
+			return event // pass through to AddItem callback for non-Expandable
+		}
+		idx := a.panels.items.GetCurrentItem()
+		if idx < 0 || idx >= len(a.loadedItems) {
+			return event
+		}
+		item := a.loadedItems[idx]
+		a.selectItem(a.activeProvider, item)
+		go func() {
+			content, err := exp.Expand(context.Background(), item)
+			a.tapp.QueueUpdateDraw(func() {
+				if err != nil {
+					a.showStatusMessage(fmt.Sprintf("[red]Expand error: %v[-]", err))
+					return
+				}
+				a.showExpand(content)
+			})
+		}()
+		return nil // consume — AddItem callback suppressed for Expandable providers
+	})
+
 	leftCol := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(a.panels.resources, 0, 1, true).
 		AddItem(a.panels.items, 0, 2, false)
@@ -276,6 +304,38 @@ func (a *App) refresh() {
 	a.panels.statusPages.SwitchToPage("hints")
 	a.resetHints()
 	a.loadItems(a.activeProvider, "")
+}
+
+// showExpand displays content in the expand panel below the detail pane.
+func (a *App) showExpand(content string) {
+	a.panels.expand.SetText(content).ScrollToBeginning()
+	a.panels.rightFlex.ResizeItem(a.panels.expand, 0, 1)
+	a.expandVisible = true
+	a.tapp.SetFocus(a.panels.expand)
+}
+
+// hideExpand hides the expand panel and returns focus to the items list.
+func (a *App) hideExpand() {
+	a.panels.rightFlex.ResizeItem(a.panels.expand, 0, 0)
+	a.expandVisible = false
+	a.tapp.SetFocus(a.panels.items)
+	a.panels.focused = 1 // items
+}
+
+// showStatusMessage temporarily sets status bar to a message.
+func (a *App) showStatusMessage(msg string) {
+	a.panels.statusPages.SwitchToPage("hints")
+	a.panels.status.SetText(msg)
+}
+
+// handleEsc implements the Esc priority: expand > navStack > pass-through.
+// Returns true if the event was consumed.
+func (a *App) handleEsc() bool {
+	if a.expandVisible {
+		a.hideExpand()
+		return true
+	}
+	return false
 }
 
 // Run starts the tview event loop.

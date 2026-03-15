@@ -32,6 +32,14 @@ func setupKeys(a *App) {
 			}
 			a.tapp.SetFocus(a.panels.prev())
 			return nil
+		case tcell.KeyEscape:
+			if searchActive {
+				return event // let searchInput.SetDoneFunc handle it
+			}
+			if a.handleEsc() {
+				return nil
+			}
+			return event
 		}
 
 		if searchActive {
