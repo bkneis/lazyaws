@@ -20,16 +20,32 @@ func KV(pairs [][2]string) string {
 	return sb.String()
 }
 
+// displayLen returns the visible character count of s, excluding tview tag markup (e.g. [red], ["region"]).
+func displayLen(s string) int {
+	n := 0
+	for i := 0; i < len(s); {
+		if s[i] == '[' {
+			if j := strings.IndexByte(s[i+1:], ']'); j >= 0 {
+				i += j + 2
+				continue
+			}
+		}
+		n++
+		i++
+	}
+	return n
+}
+
 // Table renders a header row, a separator line, and data rows.
 func Table(headers []string, rows [][]string) string {
 	widths := make([]int, len(headers))
 	for i, h := range headers {
-		widths[i] = len(h)
+		widths[i] = displayLen(h)
 	}
 	for _, row := range rows {
 		for i, cell := range row {
-			if i < len(widths) && len(cell) > widths[i] {
-				widths[i] = len(cell)
+			if i < len(widths) && displayLen(cell) > widths[i] {
+				widths[i] = displayLen(cell)
 			}
 		}
 	}

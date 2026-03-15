@@ -171,7 +171,7 @@ func (p *APIGatewayProvider) tabRoutes(ctx context.Context, item Item) (string, 
 			integration := "(REST)"
 			methodOut, err := p.v1.GetMethod(ctx, &apigwv1.GetMethodInput{
 				RestApiId:  awssdk.String(item.ID),
-				ResourceId: awssdk.String(awssdk.ToString(res.Id)),
+				ResourceId: res.Id,
 				HttpMethod: awssdk.String(method),
 			})
 			if err == nil && methodOut.MethodIntegration != nil && methodOut.MethodIntegration.Uri != nil {
