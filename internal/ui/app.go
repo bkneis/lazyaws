@@ -73,8 +73,9 @@ func (a *App) build() {
 	// Wire tabBar mouse capture for clickable tabs
 	a.panels.tabBar.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
 		if action == tview.MouseLeftClick {
-			col, _ := event.Position() // Position() returns (x=column, y=row)
-			a.selectTabByColumn(col)
+			screenCol, _ := event.Position()            // screen-absolute column
+			widgetX, _, _, _ := a.panels.tabBar.GetRect() // widget's left edge on screen
+			a.selectTabByColumn(screenCol - widgetX)
 			return action, nil
 		}
 		return action, event
