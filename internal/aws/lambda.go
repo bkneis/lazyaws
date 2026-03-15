@@ -76,7 +76,7 @@ func (p *LambdaProvider) tabOverview(ctx context.Context, item Item) (string, er
 
 	memory := fmt.Sprintf("%d MB", awssdk.ToInt32(cfg.MemorySize))
 	timeout := fmt.Sprintf("%ds", awssdk.ToInt32(cfg.Timeout))
-	codeSize := formatSize(cfg.CodeSize)
+	codeSize := FormatSize(cfg.CodeSize)
 	lastMod := awssdk.ToString(cfg.LastModified)
 	if t, err := time.Parse(time.RFC3339, lastMod); err == nil {
 		lastMod = t.Format("2006-01-02 15:04")

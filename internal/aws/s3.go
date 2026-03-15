@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
+	"sync"
 	"time"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -21,10 +23,23 @@ type S3API interface {
 	GetBucketEncryption(ctx context.Context, in *s3.GetBucketEncryptionInput, opts ...func(*s3.Options)) (*s3.GetBucketEncryptionOutput, error)
 	ListObjectsV2(ctx context.Context, in *s3.ListObjectsV2Input, opts ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
 	GetBucketPolicy(ctx context.Context, in *s3.GetBucketPolicyInput, opts ...func(*s3.Options)) (*s3.GetBucketPolicyOutput, error)
+	GetObject(ctx context.Context, in *s3.GetObjectInput, opts ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+}
+
+// S3ObjectItem holds pre-formatted display data for interactive object row selection.
+type S3ObjectItem struct {
+	Key           string
+	Size          int64
+	SizeFormatted string
+	LastModified  string
 }
 
 // S3Provider implements Provider for Amazon S3.
-type S3Provider struct{ client S3API }
+type S3Provider struct {
+	client      S3API
+	objectsMu   sync.Mutex
+	lastObjects []S3ObjectItem
+}
 
 func NewS3Provider(cfg awssdk.Config, local bool) *S3Provider {
 	var opts []func(*s3.Options)
@@ -122,23 +137,56 @@ func (p *S3Provider) tabObjects(ctx context.Context, item Item) (string, error) 
 		return "", err
 	}
 
+	raw := make([]S3ObjectItem, len(out.Contents))
 	rows := make([][]string, len(out.Contents))
 	for i, obj := range out.Contents {
-		size := formatSize(awssdk.ToInt64(obj.Size))
+		key := awssdk.ToString(obj.Key)
+		size := awssdk.ToInt64(obj.Size)
 		mod := ""
 		if obj.LastModified != nil {
 			mod = obj.LastModified.Format(time.DateOnly)
 		}
-		rows[i] = []string{awssdk.ToString(obj.Key), size, mod}
+		raw[i] = S3ObjectItem{Key: key, Size: size, SizeFormatted: FormatSize(size), LastModified: mod}
+		rows[i] = []string{key, FormatSize(size), mod}
 	}
+
+	p.objectsMu.Lock()
+	p.lastObjects = raw
+	p.objectsMu.Unlock()
 
 	result := Table([]string{"Key", "Size", "Last Modified"}, rows)
 	total := awssdk.ToInt32(out.KeyCount)
 	shown := int32(len(out.Contents))
 	if shown < total {
-		result += fmt.Sprintf("\n  (showing %d of %d objects)\n", shown, total)
+		result += fmt.Sprintf("\n  (showing %d of %d objects — use / to filter)\n", shown, total)
 	}
 	return result, nil
+}
+
+// GetLastObjects returns the objects cached by the most recent tabObjects call.
+func (p *S3Provider) GetLastObjects() []S3ObjectItem {
+	p.objectsMu.Lock()
+	defer p.objectsMu.Unlock()
+	out := make([]S3ObjectItem, len(p.lastObjects))
+	copy(out, p.lastObjects)
+	return out
+}
+
+// DownloadObject streams the S3 object body to w. The caller is responsible
+// for closing the destination after writing.
+func (p *S3Provider) DownloadObject(ctx context.Context, bucketName, key string, w io.Writer) error {
+	out, err := p.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: awssdk.String(bucketName),
+		Key:    awssdk.String(key),
+	})
+	if err != nil {
+		return fmt.Errorf("get object: %w", err)
+	}
+	defer out.Body.Close()
+	if _, err := io.Copy(w, out.Body); err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	return nil
 }
 
 func (p *S3Provider) tabPolicy(ctx context.Context, item Item) (string, error) {
@@ -157,7 +205,7 @@ func (p *S3Provider) tabPolicy(ctx context.Context, item Item) (string, error) {
 	return "  " + string(b) + "\n", nil
 }
 
-func formatSize(bytes int64) string {
+func FormatSize(bytes int64) string {
 	switch {
 	case bytes >= 1<<30:
 		return fmt.Sprintf("%.1f GB", float64(bytes)/(1<<30))
