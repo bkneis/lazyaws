@@ -32,7 +32,8 @@ func TestLink(t *testing.T) {
 
 func TestArnLastSegment(t *testing.T) {
 	tests := []struct{ arn, want string }{
-		{"arn:aws:iam::123456789012:role/MyRole", "role/MyRole"},
+		{"arn:aws:iam::123456789012:role/MyRole", "MyRole"},      // slash stripped → role name only
+		{"arn:aws:lambda:us-east-1:123:function:my-fn", "my-fn"}, // no slash
 		{"arn:aws:sqs:us-east-1:123:my-queue", "my-queue"},
 		{"simple", "simple"},
 	}

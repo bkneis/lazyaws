@@ -78,14 +78,15 @@ func Link(label, providerName, targetID string) string {
 	return `["` + region + `"][aqua::u]` + label + `[white::-]["]`
 }
 
-// arnLastSegment returns the last colon-separated segment of an ARN.
-// Used to extract role names, queue names, topic names from ARNs.
+// arnLastSegment returns the resource name from an ARN.
+// Splits on ":" first, then on "/" to handle "role/MyRole" → "MyRole".
 func arnLastSegment(arn string) string {
 	parts := strings.Split(arn, ":")
-	if len(parts) == 0 {
-		return arn
+	seg := parts[len(parts)-1]
+	if idx := strings.LastIndex(seg, "/"); idx >= 0 {
+		return seg[idx+1:]
 	}
-	return parts[len(parts)-1]
+	return seg
 }
 
 // arnToSQSURL converts an SQS ARN to its queue URL form.
