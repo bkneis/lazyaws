@@ -671,12 +671,12 @@ func (a *App) downloadAndShow(bucket, key string) {
 		}
 		f.Close()
 		tmpPath := f.Name()
-		a.tmpFiles = append(a.tmpFiles, tmpPath)
-		content, err := os.ReadFile(tmpPath)
+		content, readErr := os.ReadFile(tmpPath)
 		a.tapp.QueueUpdateDraw(func() {
+			a.tmpFiles = append(a.tmpFiles, tmpPath)
 			a.resetHints()
-			if err != nil {
-				a.showStatusMessage(fmt.Sprintf("[red]Read error: %v[-]", err))
+			if readErr != nil {
+				a.showStatusMessage(fmt.Sprintf("[red]Read error: %v[-]", readErr))
 				return
 			}
 			a.showExpand(string(content))
@@ -709,14 +709,15 @@ func (a *App) downloadAndOpen(bucket, key string) {
 		}
 		f.Close()
 		tmpPath := f.Name()
-		a.tmpFiles = append(a.tmpFiles, tmpPath)
-		if err := exec.Command("xdg-open", tmpPath).Start(); err != nil {
-			a.tapp.QueueUpdateDraw(func() {
-				a.showStatusMessage(fmt.Sprintf("[red]Failed to open: %v[-]", err))
-			})
-		} else {
-			a.tapp.QueueUpdateDraw(func() { a.resetHints() })
-		}
+		openErr := exec.Command("xdg-open", tmpPath).Start()
+		a.tapp.QueueUpdateDraw(func() {
+			a.tmpFiles = append(a.tmpFiles, tmpPath)
+			if openErr != nil {
+				a.showStatusMessage(fmt.Sprintf("[red]Failed to open: %v[-]", openErr))
+				return
+			}
+			a.resetHints()
+		})
 	}()
 }
 
