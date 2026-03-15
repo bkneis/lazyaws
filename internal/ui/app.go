@@ -15,12 +15,15 @@ type App struct {
 	tapp           *tview.Application
 	panels         *panels
 	providers      []awspkg.Provider
+	loadedItems    []awspkg.Item // mirrors items list for Enter handler
 	activeProvider int
 	activeTab      int
 	tabLoaded      []bool
 	tabCache       []string
 	currentItem    awspkg.Item
 	preFocusIdx    int
+	tabBarOffsets  []int // display-column start per tab (for mouse click)
+	expandVisible  bool  // whether expand panel is shown
 }
 
 // NewApp constructs the App with the given resource providers.
@@ -65,7 +68,17 @@ func (a *App) build() {
 
 	layout := tview.NewFlex().
 		AddItem(leftCol, 25, 0, true).
-		AddItem(a.panels.detail, 0, 1, false)
+		AddItem(a.panels.rightFlex, 0, 1, false)
+
+	// Wire tabBar mouse capture for clickable tabs
+	a.panels.tabBar.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		if action == tview.MouseLeftClick {
+			col, _ := event.Position() // Position() returns (x=column, y=row)
+			a.selectTabByColumn(col)
+			return action, nil
+		}
+		return action, event
+	})
 
 	outer := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(layout, 0, 1, true).
@@ -82,6 +95,7 @@ func (a *App) build() {
 func (a *App) loadItems(i int, query string) {
 	a.tabLoaded = nil
 	a.tabCache = nil
+	a.loadedItems = nil
 	a.currentItem = awspkg.Item{}
 	a.panels.items.Clear()
 	a.panels.detail.SetText("Loading...")
@@ -91,6 +105,7 @@ func (a *App) loadItems(i int, query string) {
 		a.tapp.QueueUpdateDraw(func() {
 			a.panels.items.Clear()
 			a.panels.detail.Clear()
+			a.loadedItems = items // assign before error check so it's always set
 
 			if err != nil {
 				a.panels.detail.SetText(fmt.Sprintf("[red]Error: %v[-]", err))
@@ -176,31 +191,63 @@ func (a *App) loadTab(providerIdx, tabIdx int, item awspkg.Item) {
 	}()
 }
 
-// renderDetail writes the tab bar + current tab content to pane 3.
+// renderDetail writes the tab bar to tabBar widget and content to detail widget.
 func (a *App) renderDetail() {
 	tabs := a.providers[a.activeProvider].Tabs()
 	if len(tabs) == 0 {
 		return
 	}
-	bar := renderTabBar(tabs, a.activeTab)
+	a.renderTabBar(tabs)
 	content := "  ... fetching"
 	if a.activeTab < len(a.tabLoaded) && a.tabLoaded[a.activeTab] {
 		content = a.tabCache[a.activeTab]
 	}
-	a.panels.detail.SetText(bar + "\n\n" + content).ScrollToBeginning()
+	a.panels.detail.SetText(content).ScrollToBeginning()
 }
 
-// renderTabBar builds the tab bar string with active tab highlighted in cyan.
-func renderTabBar(tabs []awspkg.TabDef, active int) string {
-	parts := make([]string, len(tabs))
-	for i, t := range tabs {
-		if i == active {
-			parts[i] = "[cyan][[]" + t.Label + "][-]"
+// renderTabBar writes the 2-row tab bar to the tabBar widget and records
+// display-column offsets for mouse click detection.
+func (a *App) renderTabBar(tabs []awspkg.TabDef) {
+	var line1, line2 strings.Builder
+	a.tabBarOffsets = make([]int, len(tabs))
+	col := 0
+	for i, tab := range tabs {
+		label := " " + tab.Label + " "
+		a.tabBarOffsets[i] = col
+		if i == a.activeTab {
+			line1.WriteString("[aqua::bu]" + label + "[-::-]")
+			line2.WriteString(strings.Repeat("─", len(label)))
 		} else {
-			parts[i] = "[gray]" + t.Label + "[-]"
+			line1.WriteString("[gray]" + label + "[-]")
+			line2.WriteString(strings.Repeat(" ", len(label)))
+		}
+		col += len(label) // display columns (no tag chars)
+	}
+	a.panels.tabBar.SetText(line1.String() + "\n" + line2.String())
+}
+
+// selectTab switches to the given tab index, fetching if not yet loaded.
+func (a *App) selectTab(idx int) {
+	tabs := a.providers[a.activeProvider].Tabs()
+	if idx < 0 || idx >= len(tabs) || len(a.tabLoaded) == 0 {
+		return
+	}
+	a.activeTab = idx
+	if !a.tabLoaded[idx] {
+		a.loadTab(a.activeProvider, idx, a.currentItem)
+	} else {
+		a.renderDetail()
+	}
+}
+
+// selectTabByColumn maps a clicked display column to the tab index and selects it.
+func (a *App) selectTabByColumn(col int) {
+	for i := len(a.tabBarOffsets) - 1; i >= 0; i-- {
+		if col >= a.tabBarOffsets[i] {
+			a.selectTab(i)
+			return
 		}
 	}
-	return " " + strings.Join(parts, "  ")
 }
 
 // nextTab advances to the next tab, fetching if not yet loaded.
@@ -209,12 +256,7 @@ func (a *App) nextTab() {
 	if len(tabs) == 0 || len(a.tabLoaded) == 0 {
 		return
 	}
-	a.activeTab = (a.activeTab + 1) % len(tabs)
-	if !a.tabLoaded[a.activeTab] {
-		a.loadTab(a.activeProvider, a.activeTab, a.currentItem)
-	} else {
-		a.renderDetail()
-	}
+	a.selectTab((a.activeTab + 1) % len(tabs))
 }
 
 // prevTab retreats to the previous tab, fetching if not yet loaded.
@@ -224,12 +266,7 @@ func (a *App) prevTab() {
 		return
 	}
 	n := len(tabs)
-	a.activeTab = (a.activeTab + n - 1) % n
-	if !a.tabLoaded[a.activeTab] {
-		a.loadTab(a.activeProvider, a.activeTab, a.currentItem)
-	} else {
-		a.renderDetail()
-	}
+	a.selectTab((a.activeTab + n - 1) % n)
 }
 
 // refresh reloads the currently active provider's item list with no filter.
