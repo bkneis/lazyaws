@@ -128,8 +128,9 @@ func (p *SQSProvider) tabDLQ(ctx context.Context, item Item) (string, error) {
 	if err := json.Unmarshal([]byte(policy), &redrive); err != nil {
 		return "  (could not parse redrive policy)\n", nil
 	}
+	dlqURL := arnToSQSURL(redrive.DeadLetterTargetArn)
 	return KV([][2]string{
-		{"DLQ ARN", redrive.DeadLetterTargetArn},
+		{"DLQ", Link(redrive.DeadLetterTargetArn, "SQS", dlqURL)},
 		{"Max Receives", fmt.Sprintf("%d", redrive.MaxReceiveCount)},
 	}), nil
 }

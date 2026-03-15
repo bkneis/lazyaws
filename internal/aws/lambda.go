@@ -89,7 +89,7 @@ func (p *LambdaProvider) tabOverview(ctx context.Context, item Item) (string, er
 		{"Handler", awssdk.ToString(cfg.Handler)},
 		{"Code Size", codeSize},
 		{"Last Mod", lastMod},
-		{"Role", awssdk.ToString(cfg.Role)},
+		{"Role", Link(awssdk.ToString(cfg.Role), "IAM Roles", arnLastSegment(awssdk.ToString(cfg.Role)))},
 	}
 	if cfg.Description != nil && awssdk.ToString(cfg.Description) != "" {
 		pairs = append(pairs, [2]string{"Description", awssdk.ToString(cfg.Description)})
@@ -126,8 +126,21 @@ func (p *LambdaProvider) tabTriggers(ctx context.Context, item Item) (string, er
 	}
 	rows := make([][]string, len(out.EventSourceMappings))
 	for i, m := range out.EventSourceMappings {
-		sourceType := triggerType(awssdk.ToString(m.EventSourceArn))
-		rows[i] = []string{sourceType, awssdk.ToString(m.EventSourceArn), awssdk.ToString(m.State)}
+		sourceARN := awssdk.ToString(m.EventSourceArn)
+		sourceType := triggerType(sourceARN)
+		targetProvider := triggerProviderFromARN(sourceARN)
+		sourceName := arnLastSegment(sourceARN)
+		var sourceCell string
+		if targetProvider != "" {
+			targetID := sourceARN
+			if targetProvider == "SQS" {
+				targetID = arnToSQSURL(sourceARN)
+			}
+			sourceCell = Link(sourceName, targetProvider, targetID)
+		} else {
+			sourceCell = sourceARN
+		}
+		rows[i] = []string{sourceType, sourceCell, awssdk.ToString(m.State)}
 	}
 	return Table([]string{"Type", "Source ARN", "State"}, rows), nil
 }
@@ -151,5 +164,18 @@ func triggerType(arn string) string {
 		return "S3"
 	default:
 		return "Unknown"
+	}
+}
+
+// triggerProviderFromARN returns the lazyaws provider name for a given event source ARN,
+// or an empty string if no provider mapping exists.
+func triggerProviderFromARN(arn string) string {
+	switch {
+	case strings.Contains(arn, ":sqs:"):
+		return "SQS"
+	case strings.Contains(arn, ":sns:"):
+		return "SNS"
+	default:
+		return ""
 	}
 }
