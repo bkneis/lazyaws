@@ -149,6 +149,7 @@ func (a *App) loadItems(i int, query string) {
 	a.tabLoaded = nil
 	a.tabCache = nil
 	a.loadedItems = nil
+	a.activeTab = 0
 	a.currentItem = awspkg.Item{}
 	a.panels.items.Clear()
 	a.panels.detail.SetText("Loading...")
