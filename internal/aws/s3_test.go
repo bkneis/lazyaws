@@ -1,0 +1,179 @@
+package aws_test
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	awspkg "github.com/bryanl/lazyaws/internal/aws"
+)
+
+// stubS3 implements awspkg.S3API using in-memory data.
+type stubS3 struct {
+	buckets  []s3types.Bucket
+	location string
+}
+
+func (s *stubS3) ListBuckets(_ context.Context, _ *s3.ListBucketsInput, _ ...func(*s3.Options)) (*s3.ListBucketsOutput, error) {
+	return &s3.ListBucketsOutput{Buckets: s.buckets}, nil
+}
+
+func (s *stubS3) GetBucketLocation(_ context.Context, in *s3.GetBucketLocationInput, _ ...func(*s3.Options)) (*s3.GetBucketLocationOutput, error) {
+	for _, b := range s.buckets {
+		if aws.ToString(b.Name) == aws.ToString(in.Bucket) {
+			return &s3.GetBucketLocationOutput{
+				LocationConstraint: s3types.BucketLocationConstraint(s.location),
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("bucket not found: %s", aws.ToString(in.Bucket))
+}
+
+func (s *stubS3) GetBucketVersioning(_ context.Context, _ *s3.GetBucketVersioningInput, _ ...func(*s3.Options)) (*s3.GetBucketVersioningOutput, error) {
+	return &s3.GetBucketVersioningOutput{
+		Status: s3types.BucketVersioningStatusEnabled,
+	}, nil
+}
+
+func (s *stubS3) GetPublicAccessBlock(_ context.Context, _ *s3.GetPublicAccessBlockInput, _ ...func(*s3.Options)) (*s3.GetPublicAccessBlockOutput, error) {
+	t := true
+	return &s3.GetPublicAccessBlockOutput{
+		PublicAccessBlockConfiguration: &s3types.PublicAccessBlockConfiguration{
+			BlockPublicAcls:   &t,
+			BlockPublicPolicy: &t,
+		},
+	}, nil
+}
+
+func (s *stubS3) GetBucketEncryption(_ context.Context, _ *s3.GetBucketEncryptionInput, _ ...func(*s3.Options)) (*s3.GetBucketEncryptionOutput, error) {
+	return &s3.GetBucketEncryptionOutput{
+		ServerSideEncryptionConfiguration: &s3types.ServerSideEncryptionConfiguration{
+			Rules: []s3types.ServerSideEncryptionRule{
+				{ApplyServerSideEncryptionByDefault: &s3types.ServerSideEncryptionByDefault{
+					SSEAlgorithm: s3types.ServerSideEncryptionAes256,
+				}},
+			},
+		},
+	}, nil
+}
+
+func (s *stubS3) ListObjectsV2(_ context.Context, _ *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+	sz := int64(2400000)
+	mod := time.Date(2024, 11, 1, 0, 0, 0, 0, time.UTC)
+	return &s3.ListObjectsV2Output{
+		Contents: []s3types.Object{
+			{Key: aws.String("images/hero.png"), Size: &sz, LastModified: &mod},
+		},
+		KeyCount: aws.Int32(1),
+	}, nil
+}
+
+func (s *stubS3) GetBucketPolicy(_ context.Context, _ *s3.GetBucketPolicyInput, _ ...func(*s3.Options)) (*s3.GetBucketPolicyOutput, error) {
+	return &s3.GetBucketPolicyOutput{
+		Policy: aws.String(`{"Version":"2012-10-17","Statement":[]}`),
+	}, nil
+}
+
+func TestS3Provider_ListItems(t *testing.T) {
+	created := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	stub := &stubS3{
+		buckets: []s3types.Bucket{
+			{Name: aws.String("my-bucket"), CreationDate: &created},
+		},
+	}
+
+	p := awspkg.NewS3ProviderWithClient(stub)
+	items, err := p.ListItems(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("got %d items, want 1", len(items))
+	}
+	if items[0].Name != "my-bucket" {
+		t.Errorf("got name %q, want my-bucket", items[0].Name)
+	}
+}
+
+func TestS3Provider_GetDetail(t *testing.T) {
+	created := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	stub := &stubS3{
+		buckets:  []s3types.Bucket{{Name: aws.String("my-bucket"), CreationDate: &created}},
+		location: "eu-west-1",
+	}
+
+	p := awspkg.NewS3ProviderWithClient(stub)
+	items, _ := p.ListItems(context.Background())
+
+	detail, err := p.GetDetail(context.Background(), items[0])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(detail, "eu-west-1") {
+		t.Errorf("detail missing region eu-west-1\nraw: %s", detail)
+	}
+}
+
+func TestS3Provider_Tabs(t *testing.T) {
+	created := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	stub := &stubS3{
+		buckets:  []s3types.Bucket{{Name: aws.String("my-bucket"), CreationDate: &created}},
+		location: "us-east-1",
+	}
+	p := awspkg.NewS3ProviderWithClient(stub)
+	tabs := p.Tabs()
+
+	if len(tabs) != 3 {
+		t.Fatalf("got %d tabs, want 3", len(tabs))
+	}
+
+	item := awspkg.Item{ID: "my-bucket", Name: "my-bucket"}
+
+	cases := []struct {
+		tabIdx int
+		label  string
+		want   string
+	}{
+		{0, "Overview", "us-east-1"},
+		{1, "Objects", "images/hero.png"},
+		{2, "Policy", "2012-10-17"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			if tabs[tc.tabIdx].Label != tc.label {
+				t.Errorf("tab %d label = %q, want %q", tc.tabIdx, tabs[tc.tabIdx].Label, tc.label)
+			}
+			content, err := tabs[tc.tabIdx].Fetch(context.Background(), item)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(content, tc.want) {
+				t.Errorf("tab %d content missing %q\ngot:\n%s", tc.tabIdx, tc.want, content)
+			}
+		})
+	}
+}
+
+func TestS3Provider_TabOverview_EmptyRegion(t *testing.T) {
+	created := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	stub := &stubS3{
+		buckets:  []s3types.Bucket{{Name: aws.String("my-bucket"), CreationDate: &created}},
+		location: "", // empty = us-east-1 per AWS API
+	}
+	p := awspkg.NewS3ProviderWithClient(stub)
+	tabs := p.Tabs()
+	item := awspkg.Item{ID: "my-bucket", Name: "my-bucket"}
+	content, err := tabs[0].Fetch(context.Background(), item)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(content, "us-east-1") {
+		t.Errorf("expected us-east-1 for empty LocationConstraint, got:\n%s", content)
+	}
+}
