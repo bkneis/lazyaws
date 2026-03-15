@@ -68,3 +68,49 @@ func IsSensitiveKey(k string) bool {
 	}
 	return false
 }
+
+// Link returns a tview-formatted string for a clickable cross-resource link.
+// providerName must match the target provider's Name() return value exactly.
+// targetID must match the target Item's ID field exactly.
+// Styled with aqua underline (no bold) — distinct from the active tab style.
+func Link(label, providerName, targetID string) string {
+	region := "link:" + providerName + ":" + targetID
+	return `["` + region + `"][aqua::u]` + label + `[white::-]["]`
+}
+
+// arnLastSegment returns the last colon-separated segment of an ARN.
+// Used to extract role names, queue names, topic names from ARNs.
+func arnLastSegment(arn string) string {
+	parts := strings.Split(arn, ":")
+	if len(parts) == 0 {
+		return arn
+	}
+	return parts[len(parts)-1]
+}
+
+// arnToSQSURL converts an SQS ARN to its queue URL form.
+// arn:aws:sqs:{region}:{accountId}:{queueName} → https://sqs.{region}.amazonaws.com/{accountId}/{queueName}
+func arnToSQSURL(arn string) string {
+	parts := strings.Split(arn, ":")
+	if len(parts) != 6 {
+		return arn
+	}
+	return fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/%s", parts[3], parts[4], parts[5])
+}
+
+// parseLambdaFromIntegrationURI extracts the Lambda function name from an API Gateway integration URI.
+// Handles both direct Lambda ARN and proxy URI format
+// (arn:aws:apigateway:...:lambda:path/.../functions/{lambdaArn}/invocations).
+func parseLambdaFromIntegrationURI(uri string) string {
+	// Proxy format: contains "functions/" and "/invocations"
+	if idx := strings.Index(uri, "functions/"); idx >= 0 {
+		rest := uri[idx+len("functions/"):]
+		if end := strings.Index(rest, "/invocations"); end >= 0 {
+			rest = rest[:end]
+		}
+		// rest is the Lambda ARN — return last segment
+		return arnLastSegment(rest)
+	}
+	// Direct Lambda ARN
+	return arnLastSegment(uri)
+}
