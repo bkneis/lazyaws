@@ -10,6 +10,13 @@ import (
 	"github.com/rivo/tview"
 )
 
+// navState records the TUI position before following a cross-resource link.
+type navState struct {
+	providerIdx int
+	itemIdx     int
+	tabIdx      int
+}
+
 // App is the root TUI application.
 type App struct {
 	tapp           *tview.Application
@@ -24,6 +31,7 @@ type App struct {
 	preFocusIdx    int
 	tabBarOffsets  []int // display-column start per tab (for mouse click)
 	expandVisible  bool  // whether expand panel is shown
+	navStack       []navState
 }
 
 // NewApp constructs the App with the given resource providers.
@@ -107,6 +115,22 @@ func (a *App) build() {
 			return action, nil
 		}
 		return action, event
+	})
+
+	// Wire content TextView for link clicks and Enter to follow links
+	a.panels.detail.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		if action == tview.MouseLeftClick {
+			a.followHighlightedLink()
+		}
+		return action, event
+	})
+	a.panels.detail.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEnter {
+			if a.followHighlightedLink() {
+				return nil
+			}
+		}
+		return event
 	})
 
 	outer := tview.NewFlex().SetDirection(tview.FlexRow).
@@ -335,7 +359,117 @@ func (a *App) handleEsc() bool {
 		a.hideExpand()
 		return true
 	}
+	if a.navigateBack() {
+		return true
+	}
 	return false
+}
+
+// navigateTo follows a cross-resource link to the given provider and item ID.
+// It pushes the current position onto navStack before navigating.
+func (a *App) navigateTo(providerName, targetID string) {
+	// Find provider index
+	targetProviderIdx := -1
+	for i, p := range a.providers {
+		if p.Name() == providerName {
+			targetProviderIdx = i
+			break
+		}
+	}
+	if targetProviderIdx == -1 {
+		a.showStatusMessage(fmt.Sprintf("[red]No provider for: %s[-]", providerName))
+		return
+	}
+
+	// Push current state
+	a.navStack = append(a.navStack, navState{
+		providerIdx: a.activeProvider,
+		itemIdx:     a.panels.items.GetCurrentItem(),
+		tabIdx:      a.activeTab,
+	})
+
+	// If provider items not loaded, load them first
+	if a.activeProvider != targetProviderIdx || len(a.loadedItems) == 0 {
+		a.showStatusMessage("[yellow]navigating…[-]")
+		a.activeProvider = targetProviderIdx
+		go func() {
+			items, err := a.providers[targetProviderIdx].ListItems(context.Background(), "")
+			a.tapp.QueueUpdateDraw(func() {
+				if err != nil {
+					a.navStack = a.navStack[:len(a.navStack)-1] // pop on error
+					a.showStatusMessage(fmt.Sprintf("[red]Navigation error: %v[-]", err))
+					return
+				}
+				a.loadedItems = items
+				a.panels.items.Clear()
+				for _, item := range items {
+					item := item
+					a.panels.items.AddItem(item.Name, "", 0, func() {
+						a.selectItem(targetProviderIdx, item)
+					})
+				}
+				a.resetHints()
+				a.panels.resources.SetCurrentItem(targetProviderIdx)
+				a.findAndSelectItem(targetProviderIdx, targetID)
+			})
+		}()
+		return
+	}
+
+	a.panels.resources.SetCurrentItem(targetProviderIdx)
+	a.findAndSelectItem(targetProviderIdx, targetID)
+}
+
+// findAndSelectItem finds the item with targetID in loadedItems and selects it.
+func (a *App) findAndSelectItem(providerIdx int, targetID string) {
+	for i, item := range a.loadedItems {
+		if item.ID == targetID {
+			a.panels.items.SetCurrentItem(i)
+			a.selectItem(providerIdx, item)
+			return
+		}
+	}
+	a.navStack = a.navStack[:len(a.navStack)-1] // pop — target not found
+	a.showStatusMessage(fmt.Sprintf("[red]Resource not found: %s[-]", targetID))
+}
+
+// navigateBack pops the navigation stack and restores the previous position.
+func (a *App) navigateBack() bool {
+	if len(a.navStack) == 0 {
+		return false
+	}
+	state := a.navStack[len(a.navStack)-1]
+	a.navStack = a.navStack[:len(a.navStack)-1]
+
+	a.activeProvider = state.providerIdx
+	a.panels.resources.SetCurrentItem(state.providerIdx)
+	// Re-load items for the restored provider (uses cache if already loaded)
+	a.loadItems(state.providerIdx, "")
+	// Item selection is reset to first item by loadItems; user re-selects manually
+	return true
+}
+
+// followHighlightedLink reads the currently highlighted region from the detail
+// TextView and navigates to it if it is a link region.
+func (a *App) followHighlightedLink() bool {
+	highlights := a.panels.detail.GetHighlights()
+	if len(highlights) == 0 {
+		return false
+	}
+	region := highlights[0]
+	if !strings.HasPrefix(region, "link:") {
+		return false
+	}
+	// region format: "link:{providerName}:{targetID}"
+	rest := strings.TrimPrefix(region, "link:")
+	sep := strings.Index(rest, ":")
+	if sep < 0 {
+		return false
+	}
+	providerName := rest[:sep]
+	targetID := rest[sep+1:]
+	a.navigateTo(providerName, targetID)
+	return true
 }
 
 // Run starts the tview event loop.
