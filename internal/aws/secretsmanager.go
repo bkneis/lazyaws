@@ -33,7 +33,7 @@ func NewSMProviderWithClient(client SMAPI) *SMProvider { return &SMProvider{clie
 
 func (p *SMProvider) Name() string { return "Secrets Manager" }
 
-func (p *SMProvider) ListItems(ctx context.Context) ([]Item, error) {
+func (p *SMProvider) ListItems(ctx context.Context, query string) ([]Item, error) {
 	out, err := p.client.ListSecrets(ctx, &secretsmanager.ListSecretsInput{})
 	if err != nil {
 		return nil, fmt.Errorf("list secrets: %w", err)
@@ -43,7 +43,7 @@ func (p *SMProvider) ListItems(ctx context.Context) ([]Item, error) {
 		name := awssdk.ToString(s.Name)
 		items[i] = Item{ID: awssdk.ToString(s.ARN), Name: name}
 	}
-	return items, nil
+	return filterItems(items, query), nil
 }
 
 func (p *SMProvider) GetDetail(ctx context.Context, item Item) (string, error) {

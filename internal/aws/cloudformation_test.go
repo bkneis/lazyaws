@@ -60,7 +60,7 @@ func (s *stubCF) ListStackResources(_ context.Context, _ *cloudformation.ListSta
 
 func TestCFProvider_ListItems(t *testing.T) {
 	p := awspkg.NewCFProviderWithClient(&stubCF{})
-	items, err := p.ListItems(context.Background())
+	items, err := p.ListItems(context.Background(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -73,6 +73,46 @@ func TestCFProvider_ListItems(t *testing.T) {
 	if items[0].ID != "my-app-stack" {
 		t.Errorf("got ID %q, want my-app-stack", items[0].ID)
 	}
+}
+
+func TestCFProvider_ListItems_Filter(t *testing.T) {
+	stub := &stubCFFilter{}
+	p := awspkg.NewCFProviderWithClient(stub)
+	cases := []struct {
+		query string
+		want  int
+	}{
+		{"", 2},
+		{"my", 1},
+		{"MY", 1},
+		{"xyz", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			items, err := p.ListItems(context.Background(), tc.query)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(items) != tc.want {
+				t.Errorf("got %d items, want %d", len(items), tc.want)
+			}
+		})
+	}
+}
+
+type stubCFFilter struct{}
+
+func (s *stubCFFilter) DescribeStacks(_ context.Context, _ *cloudformation.DescribeStacksInput, _ ...func(*cloudformation.Options)) (*cloudformation.DescribeStacksOutput, error) {
+	return &cloudformation.DescribeStacksOutput{
+		Stacks: []cftypes.Stack{
+			{StackName: aws.String("my-stack"), StackStatus: cftypes.StackStatusCreateComplete},
+			{StackName: aws.String("other-stack"), StackStatus: cftypes.StackStatusCreateComplete},
+		},
+	}, nil
+}
+
+func (s *stubCFFilter) ListStackResources(_ context.Context, _ *cloudformation.ListStackResourcesInput, _ ...func(*cloudformation.Options)) (*cloudformation.ListStackResourcesOutput, error) {
+	return &cloudformation.ListStackResourcesOutput{}, nil
 }
 
 func TestCFProvider_Tabs(t *testing.T) {

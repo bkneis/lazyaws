@@ -69,7 +69,7 @@ func (s *stubSM) ListSecretVersionIds(_ context.Context, _ *secretsmanager.ListS
 
 func TestSMProvider_ListItems(t *testing.T) {
 	p := awspkg.NewSMProviderWithClient(&stubSM{})
-	items, err := p.ListItems(context.Background())
+	items, err := p.ListItems(context.Background(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -82,6 +82,54 @@ func TestSMProvider_ListItems(t *testing.T) {
 	if !strings.HasPrefix(items[0].ID, "arn:aws:secretsmanager") {
 		t.Errorf("got ID %q, want ARN", items[0].ID)
 	}
+}
+
+func TestSMProvider_ListItems_Filter(t *testing.T) {
+	stub := &stubSMFilter{}
+	p := awspkg.NewSMProviderWithClient(stub)
+	cases := []struct {
+		query string
+		want  int
+	}{
+		{"", 2},
+		{"my", 1},
+		{"MY", 1},
+		{"xyz", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			items, err := p.ListItems(context.Background(), tc.query)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(items) != tc.want {
+				t.Errorf("got %d items, want %d", len(items), tc.want)
+			}
+		})
+	}
+}
+
+type stubSMFilter struct{}
+
+func (s *stubSMFilter) ListSecrets(_ context.Context, _ *secretsmanager.ListSecretsInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.ListSecretsOutput, error) {
+	return &secretsmanager.ListSecretsOutput{
+		SecretList: []smtypes.SecretListEntry{
+			{Name: aws.String("my-secret"), ARN: aws.String("arn:aws:secretsmanager:us-east-1:123:secret:my-secret-AbCdEf")},
+			{Name: aws.String("other-secret"), ARN: aws.String("arn:aws:secretsmanager:us-east-1:123:secret:other-secret-GhIjKl")},
+		},
+	}, nil
+}
+
+func (s *stubSMFilter) DescribeSecret(_ context.Context, _ *secretsmanager.DescribeSecretInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.DescribeSecretOutput, error) {
+	return &secretsmanager.DescribeSecretOutput{}, nil
+}
+
+func (s *stubSMFilter) GetSecretValue(_ context.Context, _ *secretsmanager.GetSecretValueInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
+	return &secretsmanager.GetSecretValueOutput{}, nil
+}
+
+func (s *stubSMFilter) ListSecretVersionIds(_ context.Context, _ *secretsmanager.ListSecretVersionIdsInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.ListSecretVersionIdsOutput, error) {
+	return &secretsmanager.ListSecretVersionIdsOutput{}, nil
 }
 
 func TestSMProvider_TabOverview(t *testing.T) {

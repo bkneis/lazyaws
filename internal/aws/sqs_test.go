@@ -39,7 +39,7 @@ func (s *stubSQS) GetQueueAttributes(_ context.Context, _ *sqs.GetQueueAttribute
 
 func TestSQSProvider_ListItems(t *testing.T) {
 	p := awspkg.NewSQSProviderWithClient(&stubSQS{})
-	items, err := p.ListItems(context.Background())
+	items, err := p.ListItems(context.Background(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -49,6 +49,46 @@ func TestSQSProvider_ListItems(t *testing.T) {
 	if items[0].Name != "order-queue" {
 		t.Errorf("got name %q, want order-queue", items[0].Name)
 	}
+}
+
+func TestSQSProvider_ListItems_Filter(t *testing.T) {
+	stub := &stubSQSFilter{}
+	p := awspkg.NewSQSProviderWithClient(stub)
+	cases := []struct {
+		query string
+		want  int
+	}{
+		{"", 2},
+		{"my", 1},
+		{"MY", 1},
+		{"xyz", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			items, err := p.ListItems(context.Background(), tc.query)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(items) != tc.want {
+				t.Errorf("got %d items, want %d", len(items), tc.want)
+			}
+		})
+	}
+}
+
+type stubSQSFilter struct{}
+
+func (s *stubSQSFilter) ListQueues(_ context.Context, _ *sqs.ListQueuesInput, _ ...func(*sqs.Options)) (*sqs.ListQueuesOutput, error) {
+	return &sqs.ListQueuesOutput{
+		QueueUrls: []string{
+			"https://sqs.us-east-1.amazonaws.com/123456789/my-queue",
+			"https://sqs.us-east-1.amazonaws.com/123456789/other-queue",
+		},
+	}, nil
+}
+
+func (s *stubSQSFilter) GetQueueAttributes(_ context.Context, _ *sqs.GetQueueAttributesInput, _ ...func(*sqs.Options)) (*sqs.GetQueueAttributesOutput, error) {
+	return &sqs.GetQueueAttributesOutput{Attributes: map[string]string{}}, nil
 }
 
 func TestSQSProvider_Tabs(t *testing.T) {

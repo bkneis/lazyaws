@@ -64,7 +64,7 @@ func (s *stubRoute53) ListResourceRecordSets(_ context.Context, _ *route53.ListR
 
 func TestRoute53Provider_ListItems(t *testing.T) {
 	p := awspkg.NewRoute53ProviderWithClient(&stubRoute53{})
-	items, err := p.ListItems(context.Background())
+	items, err := p.ListItems(context.Background(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -77,6 +77,50 @@ func TestRoute53Provider_ListItems(t *testing.T) {
 	if items[0].Name != "example.com." {
 		t.Errorf("got name %q, want example.com.", items[0].Name)
 	}
+}
+
+func TestRoute53Provider_ListItems_Filter(t *testing.T) {
+	stub := &stubRoute53Filter{}
+	p := awspkg.NewRoute53ProviderWithClient(stub)
+	cases := []struct {
+		query string
+		want  int
+	}{
+		{"", 2},
+		{"my", 1},
+		{"MY", 1},
+		{"xyz", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			items, err := p.ListItems(context.Background(), tc.query)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(items) != tc.want {
+				t.Errorf("got %d items, want %d", len(items), tc.want)
+			}
+		})
+	}
+}
+
+type stubRoute53Filter struct{}
+
+func (s *stubRoute53Filter) ListHostedZones(_ context.Context, _ *route53.ListHostedZonesInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
+	return &route53.ListHostedZonesOutput{
+		HostedZones: []r53types.HostedZone{
+			{Id: aws.String("/hostedzone/Z111"), Name: aws.String("my.example.com.")},
+			{Id: aws.String("/hostedzone/Z222"), Name: aws.String("other.example.com.")},
+		},
+	}, nil
+}
+
+func (s *stubRoute53Filter) GetHostedZone(_ context.Context, _ *route53.GetHostedZoneInput, _ ...func(*route53.Options)) (*route53.GetHostedZoneOutput, error) {
+	return &route53.GetHostedZoneOutput{HostedZone: &r53types.HostedZone{}}, nil
+}
+
+func (s *stubRoute53Filter) ListResourceRecordSets(_ context.Context, _ *route53.ListResourceRecordSetsInput, _ ...func(*route53.Options)) (*route53.ListResourceRecordSetsOutput, error) {
+	return &route53.ListResourceRecordSetsOutput{}, nil
 }
 
 func TestRoute53Provider_Tabs(t *testing.T) {

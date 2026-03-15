@@ -30,7 +30,7 @@ func NewACMProviderWithClient(client ACMAPI) *ACMProvider { return &ACMProvider{
 
 func (p *ACMProvider) Name() string { return "ACM" }
 
-func (p *ACMProvider) ListItems(ctx context.Context) ([]Item, error) {
+func (p *ACMProvider) ListItems(ctx context.Context, query string) ([]Item, error) {
 	out, err := p.client.ListCertificates(ctx, &acm.ListCertificatesInput{})
 	if err != nil {
 		return nil, fmt.Errorf("list certificates: %w", err)
@@ -42,7 +42,7 @@ func (p *ACMProvider) ListItems(ctx context.Context) ([]Item, error) {
 			Name: awssdk.ToString(c.DomainName),
 		}
 	}
-	return items, nil
+	return filterItems(items, query), nil
 }
 
 func (p *ACMProvider) GetDetail(ctx context.Context, item Item) (string, error) {

@@ -69,7 +69,7 @@ func (a *App) loadItems(i int) {
 	a.panels.detail.SetText("Loading...")
 
 	go func() {
-		items, err := a.providers[i].ListItems(context.Background())
+		items, err := a.providers[i].ListItems(context.Background(), "")
 		a.tapp.QueueUpdateDraw(func() {
 			a.panels.items.Clear()
 			a.panels.detail.Clear()

@@ -58,7 +58,7 @@ func (s *stubACM) DescribeCertificate(_ context.Context, _ *acm.DescribeCertific
 
 func TestACMProvider_ListItems(t *testing.T) {
 	p := awspkg.NewACMProviderWithClient(&stubACM{})
-	items, err := p.ListItems(context.Background())
+	items, err := p.ListItems(context.Background(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,6 +68,46 @@ func TestACMProvider_ListItems(t *testing.T) {
 	if items[0].Name != "example.com" {
 		t.Errorf("got name %q, want example.com", items[0].Name)
 	}
+}
+
+func TestACMProvider_ListItems_Filter(t *testing.T) {
+	stub := &stubACMFilter{}
+	p := awspkg.NewACMProviderWithClient(stub)
+	cases := []struct {
+		query string
+		want  int
+	}{
+		{"", 2},
+		{"my", 1},
+		{"MY", 1},
+		{"xyz", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			items, err := p.ListItems(context.Background(), tc.query)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(items) != tc.want {
+				t.Errorf("got %d items, want %d", len(items), tc.want)
+			}
+		})
+	}
+}
+
+type stubACMFilter struct{}
+
+func (s *stubACMFilter) ListCertificates(_ context.Context, _ *acm.ListCertificatesInput, _ ...func(*acm.Options)) (*acm.ListCertificatesOutput, error) {
+	return &acm.ListCertificatesOutput{
+		CertificateSummaryList: []acmtypes.CertificateSummary{
+			{CertificateArn: aws.String("arn:aws:acm:us-east-1:123:certificate/aaa"), DomainName: aws.String("my.cert.com")},
+			{CertificateArn: aws.String("arn:aws:acm:us-east-1:123:certificate/bbb"), DomainName: aws.String("other.cert.com")},
+		},
+	}, nil
+}
+
+func (s *stubACMFilter) DescribeCertificate(_ context.Context, _ *acm.DescribeCertificateInput, _ ...func(*acm.Options)) (*acm.DescribeCertificateOutput, error) {
+	return &acm.DescribeCertificateOutput{Certificate: &acmtypes.CertificateDetail{}}, nil
 }
 
 func TestACMProvider_Tabs(t *testing.T) {

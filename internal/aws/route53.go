@@ -32,7 +32,7 @@ func NewRoute53ProviderWithClient(client Route53API) *Route53Provider {
 
 func (p *Route53Provider) Name() string { return "Route53" }
 
-func (p *Route53Provider) ListItems(ctx context.Context) ([]Item, error) {
+func (p *Route53Provider) ListItems(ctx context.Context, query string) ([]Item, error) {
 	out, err := p.client.ListHostedZones(ctx, &route53.ListHostedZonesInput{})
 	if err != nil {
 		return nil, fmt.Errorf("list hosted zones: %w", err)
@@ -44,7 +44,7 @@ func (p *Route53Provider) ListItems(ctx context.Context) ([]Item, error) {
 		name := awssdk.ToString(z.Name)
 		items[i] = Item{ID: id, Name: name}
 	}
-	return items, nil
+	return filterItems(items, query), nil
 }
 
 func (p *Route53Provider) GetDetail(ctx context.Context, item Item) (string, error) {

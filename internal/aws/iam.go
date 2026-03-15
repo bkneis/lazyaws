@@ -33,7 +33,7 @@ func NewIAMProviderWithClient(client IAMAPI) *IAMProvider { return &IAMProvider{
 
 func (p *IAMProvider) Name() string { return "IAM Roles" }
 
-func (p *IAMProvider) ListItems(ctx context.Context) ([]Item, error) {
+func (p *IAMProvider) ListItems(ctx context.Context, query string) ([]Item, error) {
 	out, err := p.client.ListRoles(ctx, &iam.ListRolesInput{})
 	if err != nil {
 		return nil, fmt.Errorf("list roles: %w", err)
@@ -43,7 +43,7 @@ func (p *IAMProvider) ListItems(ctx context.Context) ([]Item, error) {
 		name := awssdk.ToString(r.RoleName)
 		items[i] = Item{ID: name, Name: name}
 	}
-	return items, nil
+	return filterItems(items, query), nil
 }
 
 func (p *IAMProvider) GetDetail(ctx context.Context, item Item) (string, error) {

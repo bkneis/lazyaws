@@ -41,7 +41,7 @@ func NewS3ProviderWithClient(client S3API) *S3Provider { return &S3Provider{clie
 
 func (p *S3Provider) Name() string { return "S3" }
 
-func (p *S3Provider) ListItems(ctx context.Context) ([]Item, error) {
+func (p *S3Provider) ListItems(ctx context.Context, query string) ([]Item, error) {
 	out, err := p.client.ListBuckets(ctx, &s3.ListBucketsInput{})
 	if err != nil {
 		return nil, fmt.Errorf("list buckets: %w", err)
@@ -51,7 +51,7 @@ func (p *S3Provider) ListItems(ctx context.Context) ([]Item, error) {
 		name := awssdk.ToString(b.Name)
 		items[i] = Item{ID: name, Name: name}
 	}
-	return items, nil
+	return filterItems(items, query), nil
 }
 
 func (p *S3Provider) GetDetail(ctx context.Context, item Item) (string, error) {

@@ -37,7 +37,7 @@ func NewLambdaProviderWithClient(client LambdaAPI) *LambdaProvider {
 
 func (p *LambdaProvider) Name() string { return "Lambda" }
 
-func (p *LambdaProvider) ListItems(ctx context.Context) ([]Item, error) {
+func (p *LambdaProvider) ListItems(ctx context.Context, query string) ([]Item, error) {
 	out, err := p.client.ListFunctions(ctx, &lambda.ListFunctionsInput{})
 	if err != nil {
 		return nil, fmt.Errorf("list functions: %w", err)
@@ -47,7 +47,7 @@ func (p *LambdaProvider) ListItems(ctx context.Context) ([]Item, error) {
 		name := awssdk.ToString(f.FunctionName)
 		items[i] = Item{ID: name, Name: name}
 	}
-	return items, nil
+	return filterItems(items, query), nil
 }
 
 func (p *LambdaProvider) GetDetail(ctx context.Context, item Item) (string, error) {

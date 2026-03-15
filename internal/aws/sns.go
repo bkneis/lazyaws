@@ -30,7 +30,7 @@ func NewSNSProviderWithClient(client SNSAPI) *SNSProvider { return &SNSProvider{
 
 func (p *SNSProvider) Name() string { return "SNS" }
 
-func (p *SNSProvider) ListItems(ctx context.Context) ([]Item, error) {
+func (p *SNSProvider) ListItems(ctx context.Context, query string) ([]Item, error) {
 	out, err := p.client.ListTopics(ctx, &sns.ListTopicsInput{})
 	if err != nil {
 		return nil, fmt.Errorf("list topics: %w", err)
@@ -44,7 +44,7 @@ func (p *SNSProvider) ListItems(ctx context.Context) ([]Item, error) {
 		}
 		items[i] = Item{ID: arn, Name: name}
 	}
-	return items, nil
+	return filterItems(items, query), nil
 }
 
 func (p *SNSProvider) GetDetail(ctx context.Context, item Item) (string, error) {

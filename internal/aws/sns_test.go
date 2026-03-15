@@ -52,7 +52,7 @@ func (s *stubSNS) ListSubscriptionsByTopic(_ context.Context, _ *sns.ListSubscri
 
 func TestSNSProvider_ListItems(t *testing.T) {
 	p := awspkg.NewSNSProviderWithClient(&stubSNS{})
-	items, err := p.ListItems(context.Background())
+	items, err := p.ListItems(context.Background(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -65,6 +65,50 @@ func TestSNSProvider_ListItems(t *testing.T) {
 	if items[0].ID != "arn:aws:sns:us-east-1:123456789:order-events" {
 		t.Errorf("got ID %q, want full ARN", items[0].ID)
 	}
+}
+
+func TestSNSProvider_ListItems_Filter(t *testing.T) {
+	stub := &stubSNSFilter{}
+	p := awspkg.NewSNSProviderWithClient(stub)
+	cases := []struct {
+		query string
+		want  int
+	}{
+		{"", 2},
+		{"my", 1},
+		{"MY", 1},
+		{"xyz", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			items, err := p.ListItems(context.Background(), tc.query)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(items) != tc.want {
+				t.Errorf("got %d items, want %d", len(items), tc.want)
+			}
+		})
+	}
+}
+
+type stubSNSFilter struct{}
+
+func (s *stubSNSFilter) ListTopics(_ context.Context, _ *sns.ListTopicsInput, _ ...func(*sns.Options)) (*sns.ListTopicsOutput, error) {
+	return &sns.ListTopicsOutput{
+		Topics: []snstypes.Topic{
+			{TopicArn: aws.String("arn:aws:sns:us-east-1:123456789:my-topic")},
+			{TopicArn: aws.String("arn:aws:sns:us-east-1:123456789:other-topic")},
+		},
+	}, nil
+}
+
+func (s *stubSNSFilter) GetTopicAttributes(_ context.Context, _ *sns.GetTopicAttributesInput, _ ...func(*sns.Options)) (*sns.GetTopicAttributesOutput, error) {
+	return &sns.GetTopicAttributesOutput{Attributes: map[string]string{}}, nil
+}
+
+func (s *stubSNSFilter) ListSubscriptionsByTopic(_ context.Context, _ *sns.ListSubscriptionsByTopicInput, _ ...func(*sns.Options)) (*sns.ListSubscriptionsByTopicOutput, error) {
+	return &sns.ListSubscriptionsByTopicOutput{}, nil
 }
 
 func TestSNSProvider_Tabs(t *testing.T) {

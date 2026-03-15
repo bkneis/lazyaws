@@ -49,7 +49,7 @@ func NewAPIGatewayProviderWithClients(v2 APIGatewayV2API, v1 APIGatewayV1API) *A
 
 func (p *APIGatewayProvider) Name() string { return "API Gateway" }
 
-func (p *APIGatewayProvider) ListItems(ctx context.Context) ([]Item, error) {
+func (p *APIGatewayProvider) ListItems(ctx context.Context, query string) ([]Item, error) {
 	var items []Item
 
 	v2out, err := p.v2.GetApis(ctx, &apigwv2.GetApisInput{})
@@ -77,7 +77,7 @@ func (p *APIGatewayProvider) ListItems(ctx context.Context) ([]Item, error) {
 		})
 	}
 
-	return items, nil
+	return filterItems(items, query), nil
 }
 
 func (p *APIGatewayProvider) GetDetail(ctx context.Context, item Item) (string, error) {

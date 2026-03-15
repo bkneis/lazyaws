@@ -88,7 +88,7 @@ func TestS3Provider_ListItems(t *testing.T) {
 	}
 
 	p := awspkg.NewS3ProviderWithClient(stub)
-	items, err := p.ListItems(context.Background())
+	items, err := p.ListItems(context.Background(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestS3Provider_GetDetail(t *testing.T) {
 	}
 
 	p := awspkg.NewS3ProviderWithClient(stub)
-	items, _ := p.ListItems(context.Background())
+	items, _ := p.ListItems(context.Background(), "")
 
 	detail, err := p.GetDetail(context.Background(), items[0])
 	if err != nil {
@@ -155,6 +155,37 @@ func TestS3Provider_Tabs(t *testing.T) {
 			}
 			if !strings.Contains(content, tc.want) {
 				t.Errorf("tab %d content missing %q\ngot:\n%s", tc.tabIdx, tc.want, content)
+			}
+		})
+	}
+}
+
+func TestS3Provider_ListItems_Filter(t *testing.T) {
+	created := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	stub := &stubS3{
+		buckets: []s3types.Bucket{
+			{Name: aws.String("my-bucket"), CreationDate: &created},
+			{Name: aws.String("other-store"), CreationDate: &created},
+		},
+	}
+	p := awspkg.NewS3ProviderWithClient(stub)
+	cases := []struct {
+		query string
+		want  int
+	}{
+		{"", 2},
+		{"my", 1},
+		{"MY", 1},
+		{"xyz", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			items, err := p.ListItems(context.Background(), tc.query)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(items) != tc.want {
+				t.Errorf("got %d items, want %d", len(items), tc.want)
 			}
 		})
 	}

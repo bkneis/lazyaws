@@ -30,7 +30,7 @@ func NewSQSProviderWithClient(client SQSAPI) *SQSProvider { return &SQSProvider{
 
 func (p *SQSProvider) Name() string { return "SQS" }
 
-func (p *SQSProvider) ListItems(ctx context.Context) ([]Item, error) {
+func (p *SQSProvider) ListItems(ctx context.Context, query string) ([]Item, error) {
 	out, err := p.client.ListQueues(ctx, &sqs.ListQueuesInput{})
 	if err != nil {
 		return nil, fmt.Errorf("list queues: %w", err)
@@ -43,7 +43,7 @@ func (p *SQSProvider) ListItems(ctx context.Context) ([]Item, error) {
 		}
 		items[i] = Item{ID: url, Name: name}
 	}
-	return items, nil
+	return filterItems(items, query), nil
 }
 
 func (p *SQSProvider) GetDetail(ctx context.Context, item Item) (string, error) {

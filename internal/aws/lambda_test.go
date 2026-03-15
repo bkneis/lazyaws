@@ -86,7 +86,7 @@ func TestLambdaProvider_ListItems(t *testing.T) {
 	}
 
 	p := awspkg.NewLambdaProviderWithClient(stub)
-	items, err := p.ListItems(context.Background())
+	items, err := p.ListItems(context.Background(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -95,6 +95,36 @@ func TestLambdaProvider_ListItems(t *testing.T) {
 	}
 	if items[0].Name != "my-function" {
 		t.Errorf("got name %q, want my-function", items[0].Name)
+	}
+}
+
+func TestLambdaProvider_ListItems_Filter(t *testing.T) {
+	stub := &stubLambda{
+		functions: []lambdatypes.FunctionConfiguration{
+			{FunctionName: aws.String("my-function"), Runtime: lambdatypes.RuntimePython312, MemorySize: aws.Int32(128), Timeout: aws.Int32(30), Handler: aws.String("handler.main"), Role: aws.String("arn:aws:iam::123:role/r")},
+			{FunctionName: aws.String("other-handler"), Runtime: lambdatypes.RuntimePython312, MemorySize: aws.Int32(256), Timeout: aws.Int32(60), Handler: aws.String("handler.main"), Role: aws.String("arn:aws:iam::123:role/r")},
+		},
+	}
+	p := awspkg.NewLambdaProviderWithClient(stub)
+	cases := []struct {
+		query string
+		want  int
+	}{
+		{"", 2},
+		{"my", 1},
+		{"MY", 1},
+		{"xyz", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			items, err := p.ListItems(context.Background(), tc.query)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(items) != tc.want {
+				t.Errorf("got %d items, want %d", len(items), tc.want)
+			}
+		})
 	}
 }
 
@@ -126,7 +156,7 @@ func TestLambdaProvider_GetDetail_nilConfiguration(t *testing.T) {
 
 func TestLambdaProvider_GetDetail(t *testing.T) {
 	p := awspkg.NewLambdaProviderWithClient(newStubLambda())
-	items, _ := p.ListItems(context.Background())
+	items, _ := p.ListItems(context.Background(), "")
 
 	detail, err := p.GetDetail(context.Background(), items[0])
 	if err != nil {

@@ -28,7 +28,7 @@ func NewCFProviderWithClient(client CFAPI) *CFProvider { return &CFProvider{clie
 
 func (p *CFProvider) Name() string { return "CloudFormation" }
 
-func (p *CFProvider) ListItems(ctx context.Context) ([]Item, error) {
+func (p *CFProvider) ListItems(ctx context.Context, query string) ([]Item, error) {
 	out, err := p.client.DescribeStacks(ctx, &cloudformation.DescribeStacksInput{})
 	if err != nil {
 		return nil, fmt.Errorf("describe stacks: %w", err)
@@ -38,7 +38,7 @@ func (p *CFProvider) ListItems(ctx context.Context) ([]Item, error) {
 		name := awssdk.ToString(s.StackName)
 		items[i] = Item{ID: name, Name: name}
 	}
-	return items, nil
+	return filterItems(items, query), nil
 }
 
 func (p *CFProvider) GetDetail(ctx context.Context, item Item) (string, error) {

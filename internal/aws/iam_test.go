@@ -54,7 +54,7 @@ func (s *stubIAM) ListRolePolicies(_ context.Context, _ *iam.ListRolePoliciesInp
 
 func TestIAMProvider_ListItems(t *testing.T) {
 	p := awspkg.NewIAMProviderWithClient(&stubIAM{})
-	items, err := p.ListItems(context.Background())
+	items, err := p.ListItems(context.Background(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -67,6 +67,54 @@ func TestIAMProvider_ListItems(t *testing.T) {
 	if items[1].Name != "ecs-task-role" {
 		t.Errorf("got name %q, want ecs-task-role", items[1].Name)
 	}
+}
+
+func TestIAMProvider_ListItems_Filter(t *testing.T) {
+	stub := &stubIAMFilter{}
+	p := awspkg.NewIAMProviderWithClient(stub)
+	cases := []struct {
+		query string
+		want  int
+	}{
+		{"", 2},
+		{"my", 1},
+		{"MY", 1},
+		{"xyz", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			items, err := p.ListItems(context.Background(), tc.query)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(items) != tc.want {
+				t.Errorf("got %d items, want %d", len(items), tc.want)
+			}
+		})
+	}
+}
+
+type stubIAMFilter struct{}
+
+func (s *stubIAMFilter) ListRoles(_ context.Context, _ *iam.ListRolesInput, _ ...func(*iam.Options)) (*iam.ListRolesOutput, error) {
+	return &iam.ListRolesOutput{
+		Roles: []iamtypes.Role{
+			{RoleName: aws.String("my-role")},
+			{RoleName: aws.String("other-role")},
+		},
+	}, nil
+}
+
+func (s *stubIAMFilter) GetRole(_ context.Context, _ *iam.GetRoleInput, _ ...func(*iam.Options)) (*iam.GetRoleOutput, error) {
+	return &iam.GetRoleOutput{Role: &iamtypes.Role{}}, nil
+}
+
+func (s *stubIAMFilter) ListAttachedRolePolicies(_ context.Context, _ *iam.ListAttachedRolePoliciesInput, _ ...func(*iam.Options)) (*iam.ListAttachedRolePoliciesOutput, error) {
+	return &iam.ListAttachedRolePoliciesOutput{}, nil
+}
+
+func (s *stubIAMFilter) ListRolePolicies(_ context.Context, _ *iam.ListRolePoliciesInput, _ ...func(*iam.Options)) (*iam.ListRolePoliciesOutput, error) {
+	return &iam.ListRolePoliciesOutput{}, nil
 }
 
 func TestIAMProvider_TabOverview(t *testing.T) {

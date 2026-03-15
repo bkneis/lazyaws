@@ -111,7 +111,7 @@ func newTestAPIGatewayProvider() *awspkg.APIGatewayProvider {
 
 func TestAPIGatewayProvider_ListItems_MergesV2AndV1(t *testing.T) {
 	p := newTestAPIGatewayProvider()
-	items, err := p.ListItems(context.Background())
+	items, err := p.ListItems(context.Background(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -141,6 +141,37 @@ func TestAPIGatewayProvider_ListItems_MergesV2AndV1(t *testing.T) {
 			}
 			if got != tc.wantType {
 				t.Errorf("Meta[\"type\"] = %q, want %q", got, tc.wantType)
+			}
+		})
+	}
+}
+
+func TestAPIGatewayProvider_ListItems_Filter(t *testing.T) {
+	v2stub := &stubAPIGatewayV2{
+		apis: []apigwv2types.Api{
+			{ApiId: aws.String("api-1"), Name: aws.String("my-api"), ProtocolType: apigwv2types.ProtocolTypeHttp},
+			{ApiId: aws.String("api-2"), Name: aws.String("other-api"), ProtocolType: apigwv2types.ProtocolTypeHttp},
+		},
+	}
+	v1stub := &stubAPIGatewayV1{}
+	p := awspkg.NewAPIGatewayProviderWithClients(v2stub, v1stub)
+	cases := []struct {
+		query string
+		want  int
+	}{
+		{"", 2},
+		{"my", 1},
+		{"MY", 1},
+		{"xyz", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			items, err := p.ListItems(context.Background(), tc.query)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(items) != tc.want {
+				t.Errorf("got %d items, want %d", len(items), tc.want)
 			}
 		})
 	}
