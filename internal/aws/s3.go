@@ -37,7 +37,7 @@ type S3ObjectItem struct {
 // S3Provider implements Provider for Amazon S3.
 type S3Provider struct {
 	client      S3API
-	objectsMu   sync.Mutex
+	objectsMu   sync.RWMutex
 	lastObjects []S3ObjectItem
 }
 
@@ -155,18 +155,16 @@ func (p *S3Provider) tabObjects(ctx context.Context, item Item) (string, error) 
 	p.objectsMu.Unlock()
 
 	result := Table([]string{"Key", "Size", "Last Modified"}, rows)
-	total := awssdk.ToInt32(out.KeyCount)
-	shown := int32(len(out.Contents))
-	if shown < total {
-		result += fmt.Sprintf("\n  (showing %d of %d objects — use / to filter)\n", shown, total)
+	if awssdk.ToBool(out.IsTruncated) {
+		result += "\n  (showing first 50 objects — use / to filter)\n"
 	}
 	return result, nil
 }
 
 // GetLastObjects returns the objects cached by the most recent tabObjects call.
 func (p *S3Provider) GetLastObjects() []S3ObjectItem {
-	p.objectsMu.Lock()
-	defer p.objectsMu.Unlock()
+	p.objectsMu.RLock()
+	defer p.objectsMu.RUnlock()
 	out := make([]S3ObjectItem, len(p.lastObjects))
 	copy(out, p.lastObjects)
 	return out
