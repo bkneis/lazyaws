@@ -2,8 +2,8 @@ package aws
 
 import (
 	"context"
-	"encoding/json"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,13 +102,11 @@ func TestIAMPoliciesProvider_Expand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Should contain pretty-printed JSON
-	var parsed map[string]any
-	// Strip leading whitespace for parse test
-	if err := json.Unmarshal([]byte(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:*","Resource":"*"}]}`), &parsed); err != nil {
-		t.Fatal(err)
+	// Verify output is pretty-printed JSON (indented, key present)
+	if !strings.Contains(content, `"Version": "2012-10-17"`) {
+		t.Errorf("want pretty-printed JSON with Version field, got %q", content)
 	}
-	if content == "" {
-		t.Error("want non-empty expand content")
+	if !strings.Contains(content, "\n") {
+		t.Errorf("want multi-line JSON, got %q", content)
 	}
 }
