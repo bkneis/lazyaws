@@ -3,6 +3,9 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	awspkg "github.com/bryanl/lazyaws/internal/aws"
@@ -34,7 +37,9 @@ type App struct {
 	navStack          []navState
 	selectedObjectRow int
 	cachedObjects     []awspkg.S3ObjectItem
-	tmpFiles          []string // temp files to clean up on exit (used in Task 10)
+	tmpFiles          []string // temp files to clean up on exit
+	promptYesHandler  func()
+	promptNoHandler   func()
 }
 
 // NewApp constructs the App with the given resource providers.
@@ -129,9 +134,39 @@ func (a *App) build() {
 	})
 	a.panels.detail.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEnter {
+			if a.isS3ObjectsTabFocused() {
+				a.openObject()
+				return nil
+			}
 			if a.followHighlightedLink() {
 				return nil
 			}
+		}
+		return event
+	})
+
+	a.panels.prompt.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Rune() {
+		case 'y', 'Y':
+			a.panels.statusPages.SwitchToPage("hints")
+			a.resetHints()
+			a.tapp.SetFocus(a.panels.detail)
+			if h := a.promptYesHandler; h != nil {
+				a.promptYesHandler = nil
+				a.promptNoHandler = nil
+				h()
+			}
+			return nil
+		case 'n', 'N':
+			a.panels.statusPages.SwitchToPage("hints")
+			a.resetHints()
+			a.tapp.SetFocus(a.panels.detail)
+			if h := a.promptNoHandler; h != nil {
+				a.promptYesHandler = nil
+				a.promptNoHandler = nil
+				h()
+			}
+			return nil
 		}
 		return event
 	})
@@ -149,6 +184,7 @@ func (a *App) build() {
 // loadItems fetches items for provider i in a background goroutine.
 // Pass query="" to load all items with no filter.
 func (a *App) loadItems(i int, query string) {
+	a.dismissPrompt()
 	a.tabLoaded = nil
 	a.tabCache = nil
 	a.loadedItems = nil
@@ -218,6 +254,7 @@ func (a *App) restoreFocus() {
 
 // selectItem resets tab state and loads the first tab for the selected item.
 func (a *App) selectItem(providerIdx int, item awspkg.Item) {
+	a.dismissPrompt()
 	a.currentItem = item
 	a.activeTab = 0
 	a.selectedObjectRow = 0
@@ -572,7 +609,155 @@ func (a *App) followHighlightedLink() bool {
 	return true
 }
 
+// showPrompt shows a y/n prompt in the status bar and wires the response handlers.
+func (a *App) showPrompt(msg string, onYes, onNo func()) {
+	a.promptYesHandler = onYes
+	a.promptNoHandler = onNo
+	a.panels.prompt.SetText(" " + msg)
+	a.panels.statusPages.SwitchToPage("prompt")
+	a.tapp.SetFocus(a.panels.prompt)
+}
+
+// dismissPrompt cancels any pending prompt without firing handlers.
+// Called when navigation moves away mid-prompt.
+func (a *App) dismissPrompt() {
+	if a.promptYesHandler != nil || a.promptNoHandler != nil {
+		a.promptYesHandler = nil
+		a.promptNoHandler = nil
+		a.panels.statusPages.SwitchToPage("hints")
+		a.resetHints()
+	}
+}
+
+var textExtensions = map[string]bool{
+	".json": true, ".txt": true, ".yaml": true, ".yml": true,
+	".log": true, ".csv": true, ".xml": true, ".md": true,
+	".toml": true, ".ini": true, ".sh": true, ".env": true,
+	".conf": true, ".properties": true,
+}
+
+func isTextFile(key string) bool {
+	ext := strings.ToLower(filepath.Ext(key))
+	return textExtensions[ext]
+}
+
+const (
+	textSizeThreshold = 10 * 1024 * 1024  // 10 MB — text files below this open silently
+	warnSizeThreshold = 100 * 1024 * 1024 // 100 MB — all files above this get a size warning
+)
+
+// downloadAndShow streams the S3 object to a temp file and shows the content in the expand panel.
+func (a *App) downloadAndShow(bucket, key string) {
+	s3p, ok := a.providers[a.activeProvider].(*awspkg.S3Provider)
+	if !ok {
+		return
+	}
+	a.showStatusMessage("[yellow]Downloading…[-]")
+	go func() {
+		f, err := os.CreateTemp("", "lazyaws-*")
+		if err != nil {
+			a.tapp.QueueUpdateDraw(func() {
+				a.showStatusMessage(fmt.Sprintf("[red]Temp file error: %v[-]", err))
+			})
+			return
+		}
+		if err := s3p.DownloadObject(context.Background(), bucket, key, f); err != nil {
+			f.Close()
+			os.Remove(f.Name())
+			a.tapp.QueueUpdateDraw(func() {
+				a.showStatusMessage(fmt.Sprintf("[red]Download error: %v[-]", err))
+			})
+			return
+		}
+		f.Close()
+		tmpPath := f.Name()
+		a.tmpFiles = append(a.tmpFiles, tmpPath)
+		content, err := os.ReadFile(tmpPath)
+		a.tapp.QueueUpdateDraw(func() {
+			a.resetHints()
+			if err != nil {
+				a.showStatusMessage(fmt.Sprintf("[red]Read error: %v[-]", err))
+				return
+			}
+			a.showExpand(string(content))
+		})
+	}()
+}
+
+// downloadAndOpen streams the S3 object to a temp file and opens it with xdg-open.
+func (a *App) downloadAndOpen(bucket, key string) {
+	s3p, ok := a.providers[a.activeProvider].(*awspkg.S3Provider)
+	if !ok {
+		return
+	}
+	a.showStatusMessage("[yellow]Downloading…[-]")
+	go func() {
+		f, err := os.CreateTemp("", "lazyaws-*")
+		if err != nil {
+			a.tapp.QueueUpdateDraw(func() {
+				a.showStatusMessage(fmt.Sprintf("[red]Temp file error: %v[-]", err))
+			})
+			return
+		}
+		if err := s3p.DownloadObject(context.Background(), bucket, key, f); err != nil {
+			f.Close()
+			os.Remove(f.Name())
+			a.tapp.QueueUpdateDraw(func() {
+				a.showStatusMessage(fmt.Sprintf("[red]Download error: %v[-]", err))
+			})
+			return
+		}
+		f.Close()
+		tmpPath := f.Name()
+		a.tmpFiles = append(a.tmpFiles, tmpPath)
+		if err := exec.Command("xdg-open", tmpPath).Start(); err != nil {
+			a.tapp.QueueUpdateDraw(func() {
+				a.showStatusMessage(fmt.Sprintf("[red]Failed to open: %v[-]", err))
+			})
+		} else {
+			a.tapp.QueueUpdateDraw(func() { a.resetHints() })
+		}
+	}()
+}
+
+// openObject handles Enter on a selected S3 object row.
+func (a *App) openObject() {
+	if len(a.cachedObjects) == 0 || a.selectedObjectRow >= len(a.cachedObjects) {
+		return
+	}
+	obj := a.cachedObjects[a.selectedObjectRow]
+	bucket := a.currentItem.ID
+	isText := isTextFile(obj.Key)
+
+	doOpen := func() {
+		if isText {
+			a.downloadAndShow(bucket, obj.Key)
+		} else {
+			a.downloadAndOpen(bucket, obj.Key)
+		}
+	}
+
+	switch {
+	case isText && obj.Size < textSizeThreshold:
+		doOpen() // silent open for small text files
+	case obj.Size >= warnSizeThreshold:
+		msg := fmt.Sprintf("File is %s. Download anyway? [y/n]", awspkg.FormatSize(obj.Size))
+		a.showPrompt(msg, doOpen, nil)
+	default:
+		msg := fmt.Sprintf("Open %s? [y/n]", obj.Key)
+		a.showPrompt(msg, doOpen, nil)
+	}
+}
+
+// cleanup removes all temp files created during the session.
+func (a *App) cleanup() {
+	for _, path := range a.tmpFiles {
+		os.Remove(path)
+	}
+}
+
 // Run starts the tview event loop.
 func (a *App) Run() error {
+	defer a.cleanup()
 	return a.tapp.Run()
 }
