@@ -7,13 +7,17 @@ import (
 
 const focusColor = tcell.ColorAqua
 
+const hintsText = " [cyan]Tab[-]/[cyan]S-Tab[-]: panel   [cyan]j/k[-]: navigate   [cyan][[]·][-]: tab   [cyan]/[-]: search   [cyan]r[-]: refresh   [cyan]q[-]: quit"
+
 // panels holds the three tview widgets and the currently focused index.
 type panels struct {
-	resources *tview.List
-	items     *tview.List
-	detail    *tview.TextView
-	status    *tview.TextView
-	focused   int // 0=resources, 1=items, 2=detail
+	resources   *tview.List
+	items       *tview.List
+	detail      *tview.TextView
+	status      *tview.TextView
+	searchInput *tview.InputField
+	statusPages *tview.Pages
+	focused     int // 0=resources, 1=items, 2=detail
 }
 
 func newPanels() *panels {
@@ -37,14 +41,24 @@ func newPanels() *panels {
 	detail.SetFocusFunc(func() { detail.SetBorderColor(focusColor) }).
 		SetBlurFunc(func() { detail.SetBorderColor(tcell.ColorDefault) })
 
-	status := tview.NewTextView().SetDynamicColors(true).
-		SetText(" [cyan]Tab[-]/[cyan]S-Tab[-]: panel   [cyan]j/k[-]: navigate   [cyan][[]·][-]: tab   [cyan]r[-]: refresh   [cyan]q[-]: quit")
+	status := tview.NewTextView().SetDynamicColors(true).SetText(hintsText)
+
+	searchInput := tview.NewInputField().
+		SetLabel("/ ").
+		SetLabelColor(tcell.ColorYellow).
+		SetFieldBackgroundColor(tcell.ColorDefault)
+
+	statusPages := tview.NewPages().
+		AddPage("hints", status, true, true).
+		AddPage("search", searchInput, true, false)
 
 	return &panels{
-		resources: resources,
-		items:     items,
-		detail:    detail,
-		status:    status,
+		resources:   resources,
+		items:       items,
+		detail:      detail,
+		status:      status,
+		searchInput: searchInput,
+		statusPages: statusPages,
 	}
 }
 
