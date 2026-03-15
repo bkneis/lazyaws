@@ -19,19 +19,22 @@ type navState struct {
 
 // App is the root TUI application.
 type App struct {
-	tapp           *tview.Application
-	panels         *panels
-	providers      []awspkg.Provider
-	loadedItems    []awspkg.Item // mirrors items list for Enter handler
-	activeProvider int
-	activeTab      int
-	tabLoaded      []bool
-	tabCache       []string
-	currentItem    awspkg.Item
-	preFocusIdx    int
-	tabBarOffsets  []int // display-column start per tab (for mouse click)
-	expandVisible  bool  // whether expand panel is shown
-	navStack       []navState
+	tapp              *tview.Application
+	panels            *panels
+	providers         []awspkg.Provider
+	loadedItems       []awspkg.Item // mirrors items list for Enter handler
+	activeProvider    int
+	activeTab         int
+	tabLoaded         []bool
+	tabCache          []string
+	currentItem       awspkg.Item
+	preFocusIdx       int
+	tabBarOffsets     []int // display-column start per tab (for mouse click)
+	expandVisible     bool  // whether expand panel is shown
+	navStack          []navState
+	selectedObjectRow int
+	cachedObjects     []awspkg.S3ObjectItem
+	tmpFiles          []string // temp files to clean up on exit (used in Task 10)
 }
 
 // NewApp constructs the App with the given resource providers.
@@ -151,6 +154,8 @@ func (a *App) loadItems(i int, query string) {
 	a.loadedItems = nil
 	a.activeTab = 0
 	a.currentItem = awspkg.Item{}
+	a.selectedObjectRow = 0
+	a.cachedObjects = nil
 	a.panels.items.Clear()
 	a.panels.detail.SetText("Loading...")
 
@@ -215,6 +220,8 @@ func (a *App) restoreFocus() {
 func (a *App) selectItem(providerIdx int, item awspkg.Item) {
 	a.currentItem = item
 	a.activeTab = 0
+	a.selectedObjectRow = 0
+	a.cachedObjects = nil
 	tabs := a.providers[providerIdx].Tabs()
 	a.tabLoaded = make([]bool, len(tabs))
 	a.tabCache = make([]string, len(tabs))
@@ -238,6 +245,13 @@ func (a *App) loadTab(providerIdx, tabIdx int, item awspkg.Item) {
 				a.tabCache[tabIdx] = content
 			}
 			a.tabLoaded[tabIdx] = true
+			// Cache S3 objects for row selection when the Objects tab finishes loading.
+			if s3p, ok := a.providers[providerIdx].(*awspkg.S3Provider); ok {
+				tabs := a.providers[providerIdx].Tabs()
+				if tabIdx < len(tabs) && tabs[tabIdx].Label == "Objects" {
+					a.cachedObjects = s3p.GetLastObjects()
+				}
+			}
 			if a.activeTab == tabIdx {
 				a.renderDetail()
 			}
@@ -254,9 +268,92 @@ func (a *App) renderDetail() {
 	a.renderTabBar(tabs)
 	content := "  ... fetching"
 	if a.activeTab < len(a.tabLoaded) && a.tabLoaded[a.activeTab] {
-		content = a.tabCache[a.activeTab]
+		if len(a.cachedObjects) > 0 && tabs[a.activeTab].Label == "Objects" {
+			content = a.renderObjectsWithHighlight()
+		} else {
+			content = a.tabCache[a.activeTab]
+		}
 	}
 	a.panels.detail.SetText(content).ScrollToBeginning()
+}
+
+// renderObjectsWithHighlight rebuilds the Objects tab table with the selected
+// row highlighted in aqua.
+func (a *App) renderObjectsWithHighlight() string {
+	if len(a.cachedObjects) == 0 {
+		return a.tabCache[a.activeTab]
+	}
+	headers := []string{"Key", "Size", "Last Modified"}
+	rows := make([][]string, len(a.cachedObjects))
+	for i, obj := range a.cachedObjects {
+		rows[i] = []string{obj.Key, obj.SizeFormatted, obj.LastModified}
+	}
+
+	widths := make([]int, len(headers))
+	for i, h := range headers {
+		widths[i] = len(h)
+	}
+	for _, row := range rows {
+		for i, cell := range row {
+			if i < len(widths) && len(cell) > widths[i] {
+				widths[i] = len(cell)
+			}
+		}
+	}
+
+	padded := make([]string, len(headers))
+	for i, h := range headers {
+		padded[i] = fmt.Sprintf("%-*s", widths[i]+2, h)
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "  [cyan]%s[-]\n  ", strings.Join(padded, ""))
+	for _, w := range widths {
+		sb.WriteString(strings.Repeat("─", w) + "  ")
+	}
+	sb.WriteString("\n")
+	for i, row := range rows {
+		if i == a.selectedObjectRow {
+			sb.WriteString("  [aqua]")
+		} else {
+			sb.WriteString("  ")
+		}
+		for j, cell := range row {
+			if j < len(widths) {
+				fmt.Fprintf(&sb, "%-*s", widths[j]+2, cell)
+			}
+		}
+		if i == a.selectedObjectRow {
+			sb.WriteString("[-]")
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// isS3ObjectsTabFocused returns true when focus is on the detail pane,
+// the active provider is S3, the active tab is Objects, and objects are cached.
+func (a *App) isS3ObjectsTabFocused() bool {
+	if a.tapp.GetFocus() != a.panels.detail {
+		return false
+	}
+	if a.providers[a.activeProvider].Name() != "S3" {
+		return false
+	}
+	tabs := a.providers[a.activeProvider].Tabs()
+	if a.activeTab >= len(tabs) || tabs[a.activeTab].Label != "Objects" {
+		return false
+	}
+	return len(a.cachedObjects) > 0
+}
+
+// moveObjectRow adjusts selectedObjectRow by delta (wraps) and re-renders.
+func (a *App) moveObjectRow(delta int) {
+	n := len(a.cachedObjects)
+	if n == 0 {
+		return
+	}
+	a.selectedObjectRow = (a.selectedObjectRow + delta + n) % n
+	a.renderDetail()
 }
 
 // renderTabBar writes the 2-row tab bar to the tabBar widget and records

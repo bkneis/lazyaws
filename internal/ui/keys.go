@@ -57,8 +57,16 @@ func setupKeys(a *App) {
 			a.refresh()
 			return nil
 		case 'j':
+			if a.isS3ObjectsTabFocused() {
+				a.moveObjectRow(1)
+				return nil
+			}
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
 		case 'k':
+			if a.isS3ObjectsTabFocused() {
+				a.moveObjectRow(-1)
+				return nil
+			}
 			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 		case ']':
 			a.nextTab()
