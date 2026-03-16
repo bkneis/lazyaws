@@ -1,3 +1,7 @@
 lazyaws
 *.test
 .worktrees/
+
+# Logo render artefacts (source SVG/HTML, puppeteer script — only PNG is committed)
+assets/logo_render.html
+/tmp/render_logo.mjs

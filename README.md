@@ -1,30 +1,67 @@
-# lazyaws
+<p align="center">
+  <img src="assets/logo.png" alt="lazyaws" width="600"/>
+</p>
 
-A terminal UI for browsing AWS resources — inspired by [lazygit](https://github.com/jesseduffield/lazygit) and [lazydocker](https://github.com/jesseduffield/lazydocker).
+<p align="center">
+  A terminal UI for browsing AWS resources — inspired by
+  <a href="https://github.com/jesseduffield/lazygit">lazygit</a> and
+  <a href="https://github.com/jesseduffield/lazydocker">lazydocker</a>.
+</p>
 
-Built for developers who live in the terminal and need fast, keyboard-driven access to AWS state without memorising CLI flags or context-switching to the console. Works equally well as a **local development companion against [LocalStack](https://www.localstack.cloud/)** and as a lightweight **read-only monitoring tool** against real AWS environments.
+<p align="center">
+  <a href="https://github.com/bkneis/lazyaws/releases"><img src="https://img.shields.io/github/v/release/bkneis/lazyaws?color=FF9900&label=release" alt="release"></a>
+  <a href="https://pkg.go.dev/github.com/bkneis/lazyaws"><img src="https://img.shields.io/badge/go-reference-FF9900" alt="go reference"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/bkneis/lazyaws?color=FF9900" alt="MIT license"></a>
+  <a href="https://github.com/bkneis/lazyaws/actions"><img src="https://img.shields.io/github/actions/workflow/status/bkneis/lazyaws/test.yml?label=tests" alt="tests"></a>
+</p>
+
+---
+
+<p align="center">
+  <img src="demo/demo.gif" alt="lazyaws demo" width="900"/>
+</p>
+
+---
 
 ## Why
 
-The AWS CLI is powerful but slow for exploratory workflows — finding a Lambda's env vars, checking a CloudFormation stack's outputs, or inspecting an SQS dead-letter queue involves multiple commands with long argument lists. `lazyaws` puts all of that in a three-panel TUI you can navigate in seconds.
+The AWS CLI is powerful but slow for exploratory workflows. Finding a Lambda's env vars, checking a CloudFormation stack's outputs, or inspecting an SQS dead-letter queue means multiple commands with long argument lists.
 
-It pairs naturally with LocalStack-based development: run `lazyaws -local` alongside your `docker compose up` to inspect the state of your emulated AWS environment in real time, the same way you'd use `lazydocker` to inspect containers.
+`lazyaws` puts all of that in a three-panel TUI you can navigate in seconds — no flags to remember, no context-switching to the browser console.
+
+It pairs naturally with **LocalStack-based development**: run `lazyaws -local` alongside `docker compose up` to inspect your emulated AWS environment in real time, the same way you'd use `lazydocker` to inspect containers. It also works as a lightweight **read-only monitoring tool** against real AWS environments.
+
+## Install
+
+```bash
+go install github.com/bkneis/lazyaws@latest
+```
+
+Or download a pre-built binary from the [releases page](https://github.com/bkneis/lazyaws/releases).
 
 ## Usage
 
 ```bash
 # Against your default AWS profile / region
-go run .
+lazyaws
 
 # Against LocalStack (http://localhost:4566)
-go run . -local
-
-# Build a binary
-go build -o lazyaws .
-./lazyaws
+lazyaws -local
 ```
 
 AWS credentials are loaded from the standard chain (`AWS_*` environment variables, `~/.aws/credentials`, IAM instance role, etc.).
+
+## Try it with LocalStack
+
+Spin up a fully-seeded local AWS environment in two commands:
+
+```bash
+docker compose up -d
+./scripts/seed.sh
+lazyaws -local
+```
+
+This seeds S3 buckets, Lambda functions, SQS queues, SNS topics, DynamoDB tables, Secrets Manager secrets, a CloudFormation stack, CloudWatch log groups, Kinesis streams, an API Gateway HTTP API, and EventBridge rules — enough to explore every provider.
 
 ## Keybindings
 
@@ -45,11 +82,26 @@ AWS credentials are loaded from the standard chain (`AWS_*` environment variable
 | SNS | Overview, Subscriptions |
 | SQS | Overview, Config, DLQ |
 | CloudFormation | Overview, Resources, Outputs, Parameters |
-| IAM | Overview, Policies, Trust policy |
+| IAM Roles | Overview, Policies, Trust policy |
+| IAM Policies | Overview, Document |
 | Secrets Manager | Overview, Value, Versions |
 | API Gateway (v1 + v2) | Overview, Routes/Resources, Stages |
 | Route 53 | Overview, Records |
 | ACM | Overview, Domains, Validation |
+| DynamoDB | Overview, Items, Indexes |
+| Kinesis | Overview, Shards |
+| KMS | Overview, Aliases |
+| Step Functions | Overview, Executions |
+| CloudWatch | Overview, Metrics |
+| CloudWatch Logs | Overview, Log streams |
+| EventBridge | Overview, Rules |
+| EC2 Instances | Overview, Tags |
+| EC2 VPCs | Overview, Subnets |
+| EC2 Security Groups | Overview, Rules |
+| EC2 Volumes | Overview, Attachments |
+| EC2 AMIs | Overview, Block devices |
+| Elastic Load Balancers | Overview, Listeners, Target groups |
+| Auto Scaling Groups | Overview, Instances |
 
 ## Contributing a New Service
 
@@ -68,11 +120,11 @@ type Provider interface {
 
 1. **Create `internal/aws/<service>.go`**
 
-   Define a narrow interface over the SDK client (only the methods you actually call), implement `Provider`, and expose two constructors:
-   - `New<Service>Provider(cfg aws.Config, local bool) *<Service>Provider` — for production use
-   - `New<Service>ProviderWithClient(client <Service>API) *<Service>Provider` — for tests
+   Define a narrow interface over the SDK client, implement `Provider`, and expose two constructors:
+   - `New<Service>Provider(cfg aws.Config, local bool) *<Service>Provider`
+   - `New<Service>ProviderWithClient(client <Service>API) *<Service>Provider`
 
-   Use `KV()` for key-value detail output and `Table()` for tabular output (both in `format.go`).
+   Use `KV()` for key-value output and `Table()` for tabular output (both in `format.go`).
 
 2. **Register in `main.go`**
 
@@ -86,11 +138,9 @@ type Provider interface {
 
 4. **Write tests**
 
-   Implement the narrow interface in your test file and use table-driven tests. See `s3_test.go` or `lambda_test.go` as reference.
+   Implement the narrow interface directly in the test file and use table-driven tests. See `s3_test.go` or `lambda_test.go` as reference.
 
-### Example prompt for Claude
-
-If you're using Claude Code, the following prompt will implement a new provider end-to-end:
+### Prompt for Claude Code
 
 ```
 Add a lazyaws provider for <ServiceName>.
@@ -101,9 +151,9 @@ Tabs:
 - Overview: show <field1>, <field2>, ... using KV()
 - <TabName>: show <what> using Table() with columns <col1>, <col2>, ...
 
-Follow the existing pattern in internal/aws/s3.go exactly:
-- define a narrow <ServiceName>API interface
-- implement Provider with New<ServiceName>Provider(cfg, local) and New<ServiceName>ProviderWithClient(client)
-- register in main.go
-- write table-driven tests in internal/aws/<service>_test.go
+Follow the existing pattern in internal/aws/s3.go exactly.
 ```
+
+## License
+
+[MIT](LICENSE) © bkneis
