@@ -31,12 +31,6 @@ type Provider interface {
 	Tabs() []TabDef
 }
 
-// Expandable is an optional interface providers can implement to support
-// the bottom expand panel. Enter on an item calls Expand and shows the result.
-type Expandable interface {
-	Expand(ctx context.Context, item Item) (string, error)
-}
-
 // ColorTags holds tview markup tags for color-rendering in provider output.
 // Set ActiveTags once at startup before the TUI starts.
 type ColorTags struct {

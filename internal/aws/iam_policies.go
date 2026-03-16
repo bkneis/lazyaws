@@ -75,11 +75,6 @@ func (p *IAMPoliciesProvider) Tabs() []TabDef {
 	}
 }
 
-// Expand implements Expandable — shows the policy document in the expand panel.
-func (p *IAMPoliciesProvider) Expand(ctx context.Context, item Item) (string, error) {
-	return p.tabDocument(ctx, item)
-}
-
 func (p *IAMPoliciesProvider) tabOverview(ctx context.Context, item Item) (string, error) {
 	// GetPolicy is needed for Description (not returned by ListPolicies).
 	description := ""

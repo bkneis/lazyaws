@@ -52,7 +52,6 @@ type App struct {
 	preFocusIdx       int
 	tabBarOffsets     []int       // display-column start per tab (for mouse click)
 	tabLinks          [][]linkRef // per-tab extracted links, parallel to tabCache
-	expandVisible      bool        // whether expand panel is shown
 	navStack           []navState
 	selectedObjectRow  int
 	cachedObjects      []awspkg.S3ObjectItem
@@ -60,8 +59,6 @@ type App struct {
 	cachedDynamoRows   []awspkg.DynamoDBItemRow
 	dynamoHeaders      []string
 	tmpFiles           []string // temp files to clean up on exit
-	promptYesHandler   func()
-	promptNoHandler    func()
 	// CW Logs live tail state
 	cachedCWLogStreams  []awspkg.CWLogStreamRow
 	selectedCWStreamRow int
@@ -111,34 +108,6 @@ func (a *App) build() {
 		case tcell.KeyEscape:
 			a.clearSearch()
 		}
-	})
-
-	a.panels.items.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() != tcell.KeyEnter {
-			return event
-		}
-		provider := a.providers[a.activeProvider]
-		exp, ok := provider.(awspkg.Expandable)
-		if !ok {
-			return event // pass through to AddItem callback for non-Expandable
-		}
-		idx := a.panels.items.GetCurrentItem()
-		if idx < 0 || idx >= len(a.loadedItems) {
-			return event
-		}
-		item := a.loadedItems[idx]
-		a.selectItem(a.activeProvider, item)
-		go func() {
-			content, err := exp.Expand(context.Background(), item)
-			a.tapp.QueueUpdateDraw(func() {
-				if err != nil {
-					a.showStatusMessage(fmt.Sprintf("[red]Expand error: %v[-]", err))
-					return
-				}
-				a.showExpand(content)
-			})
-		}()
-		return nil // consume — AddItem callback suppressed for Expandable providers
 	})
 
 	leftCol := tview.NewFlex().SetDirection(tview.FlexRow).
@@ -212,46 +181,12 @@ func (a *App) build() {
 		return action, event
 	})
 
-	// Wire Enter on detail to follow the first link, open an S3 object, or expand a DynamoDB item.
+	// Wire Enter on detail to follow the first cross-resource link.
 	a.panels.detail.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEnter {
-			if a.isS3ObjectsTabFocused() {
-				a.openObject()
-				return nil
-			}
-			if a.isDynamoItemsTabFocused() {
-				a.showDynamoItemExpand()
-				return nil
-			}
 			if a.followFirstLink() {
 				return nil
 			}
-		}
-		return event
-	})
-
-	a.panels.prompt.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Rune() {
-		case 'y', 'Y':
-			a.panels.statusPages.SwitchToPage("hints")
-			a.resetHints()
-			a.tapp.SetFocus(a.panels.detail)
-			if h := a.promptYesHandler; h != nil {
-				a.promptYesHandler = nil
-				a.promptNoHandler = nil
-				h()
-			}
-			return nil
-		case 'n', 'N':
-			a.panels.statusPages.SwitchToPage("hints")
-			a.resetHints()
-			a.tapp.SetFocus(a.panels.detail)
-			if h := a.promptNoHandler; h != nil {
-				a.promptYesHandler = nil
-				a.promptNoHandler = nil
-				h()
-			}
-			return nil
 		}
 		return event
 	})
@@ -269,7 +204,6 @@ func (a *App) build() {
 // loadItems fetches items for provider i in a background goroutine.
 // Pass query="" to load all items with no filter.
 func (a *App) loadItems(i int, query string) {
-	a.dismissPrompt()
 	a.stopCWTailStream()
 	a.cachedCWLogStreams = nil
 	a.selectedCWStreamRow = 0
@@ -351,8 +285,6 @@ func (a *App) restoreFocus() {
 
 // selectItem resets tab state and loads the first tab for the selected item.
 func (a *App) selectItem(providerIdx int, item awspkg.Item) {
-	a.dismissPrompt()
-	a.collapseExpand()
 	a.stopCWTailStream()
 	a.cachedCWLogStreams = nil
 	a.selectedCWStreamRow = 0
@@ -653,14 +585,6 @@ func (a *App) advanceDynamoPage(forward bool) {
 	}()
 }
 
-// showDynamoItemExpand shows the full JSON of the selected DynamoDB item in the expand panel.
-func (a *App) showDynamoItemExpand() {
-	if len(a.cachedDynamoRows) == 0 || a.selectedDynamoRow >= len(a.cachedDynamoRows) {
-		return
-	}
-	a.showExpand(a.cachedDynamoRows[a.selectedDynamoRow].FullJSON)
-}
-
 // moveObjectRow adjusts selectedObjectRow by delta (wraps) and re-renders.
 func (a *App) moveObjectRow(delta int) {
 	n := len(a.cachedObjects)
@@ -707,7 +631,6 @@ func (a *App) selectTab(idx int) {
 	if idx < 0 || idx >= len(tabs) || len(a.tabLoaded) == 0 {
 		return
 	}
-	a.collapseExpand()
 
 	// Stop tail stream when leaving the Tail tab.
 	if a.isCWLogsTailActive() {
@@ -769,45 +692,15 @@ func (a *App) refresh() {
 	a.loadItems(a.activeProvider, "")
 }
 
-// showExpand displays content in the expand panel below the detail pane.
-func (a *App) showExpand(content string) {
-	a.panels.expand.SetText(content).ScrollToBeginning()
-	a.panels.rightFlex.ResizeItem(a.panels.expand, 0, 1)
-	a.expandVisible = true
-	a.tapp.SetFocus(a.panels.expand)
-}
-
-// collapseExpand hides the expand panel without changing focus.
-// Use this for programmatic dismissal when another action takes over (tab/item switch).
-func (a *App) collapseExpand() {
-	if !a.expandVisible {
-		return
-	}
-	a.panels.rightFlex.ResizeItem(a.panels.expand, 0, 0)
-	a.expandVisible = false
-}
-
-// hideExpand hides the expand panel and returns focus to the items list.
-func (a *App) hideExpand() {
-	a.panels.rightFlex.ResizeItem(a.panels.expand, 0, 0)
-	a.expandVisible = false
-	a.tapp.SetFocus(a.panels.items)
-	a.panels.focused = 1 // items
-}
-
 // showStatusMessage temporarily sets status bar to a message.
 func (a *App) showStatusMessage(msg string) {
 	a.panels.statusPages.SwitchToPage("hints")
 	a.panels.status.SetText(msg)
 }
 
-// handleEsc implements the Esc priority: expand > navStack > pass-through.
+// handleEsc implements the Esc priority: navStack > pass-through.
 // Returns true if the event was consumed.
 func (a *App) handleEsc() bool {
-	if a.expandVisible {
-		a.hideExpand()
-		return true
-	}
 	if a.navigateBack() {
 		return true
 	}
@@ -906,132 +799,6 @@ func (a *App) followFirstLink() bool {
 	link := a.tabLinks[a.activeTab][0]
 	a.navigateTo(link.provider, link.targetID)
 	return true
-}
-
-// showPrompt shows a y/n prompt in the status bar and wires the response handlers.
-func (a *App) showPrompt(msg string, onYes, onNo func()) {
-	a.promptYesHandler = onYes
-	a.promptNoHandler = onNo
-	a.panels.prompt.SetText(" " + msg)
-	a.panels.statusPages.SwitchToPage("prompt")
-	a.tapp.SetFocus(a.panels.prompt)
-}
-
-// dismissPrompt cancels any pending prompt without firing handlers.
-// Called when navigation moves away mid-prompt.
-func (a *App) dismissPrompt() {
-	if a.promptYesHandler != nil || a.promptNoHandler != nil {
-		a.promptYesHandler = nil
-		a.promptNoHandler = nil
-		a.panels.statusPages.SwitchToPage("hints")
-		a.resetHints()
-	}
-}
-
-const warnSizeThreshold = 100 * 1024 * 1024 // 100 MB — all files above this get a size warning
-
-// downloadAndShow streams the S3 object to a temp file and shows the content in the expand panel.
-func (a *App) downloadAndShow(bucket, key string) {
-	s3p, ok := a.providers[a.activeProvider].(*awspkg.S3Provider)
-	if !ok {
-		return
-	}
-	a.showStatusMessage("[yellow]Downloading…[-]")
-	go func() {
-		f, err := os.CreateTemp("", "lazyaws-*")
-		if err != nil {
-			a.tapp.QueueUpdateDraw(func() {
-				a.showStatusMessage(fmt.Sprintf("[red]Temp file error: %v[-]", err))
-			})
-			return
-		}
-		if err := s3p.DownloadObject(context.Background(), bucket, key, f); err != nil {
-			f.Close()
-			os.Remove(f.Name())
-			a.tapp.QueueUpdateDraw(func() {
-				a.showStatusMessage(fmt.Sprintf("[red]Download error: %v[-]", err))
-			})
-			return
-		}
-		f.Close()
-		tmpPath := f.Name()
-		content, readErr := os.ReadFile(tmpPath)
-		a.tapp.QueueUpdateDraw(func() {
-			a.tmpFiles = append(a.tmpFiles, tmpPath)
-			a.resetHints()
-			if readErr != nil {
-				a.showStatusMessage(fmt.Sprintf("[red]Read error: %v[-]", readErr))
-				return
-			}
-			a.showExpand(string(content))
-		})
-	}()
-}
-
-// downloadAndOpen streams the S3 object to a temp file and opens it with xdg-open.
-func (a *App) downloadAndOpen(bucket, key string) {
-	s3p, ok := a.providers[a.activeProvider].(*awspkg.S3Provider)
-	if !ok {
-		return
-	}
-	a.showStatusMessage("[yellow]Downloading…[-]")
-	go func() {
-		f, err := os.CreateTemp("", "lazyaws-*")
-		if err != nil {
-			a.tapp.QueueUpdateDraw(func() {
-				a.showStatusMessage(fmt.Sprintf("[red]Temp file error: %v[-]", err))
-			})
-			return
-		}
-		if err := s3p.DownloadObject(context.Background(), bucket, key, f); err != nil {
-			f.Close()
-			os.Remove(f.Name())
-			a.tapp.QueueUpdateDraw(func() {
-				a.showStatusMessage(fmt.Sprintf("[red]Download error: %v[-]", err))
-			})
-			return
-		}
-		f.Close()
-		tmpPath := f.Name()
-		openErr := exec.Command("xdg-open", tmpPath).Start()
-		a.tapp.QueueUpdateDraw(func() {
-			a.tmpFiles = append(a.tmpFiles, tmpPath)
-			if openErr != nil {
-				a.showStatusMessage(fmt.Sprintf("[red]Failed to open: %v[-]", openErr))
-				return
-			}
-			a.resetHints()
-		})
-	}()
-}
-
-// openObject handles Enter on a selected S3 object row.
-func (a *App) openObject() {
-	if len(a.cachedObjects) == 0 || a.selectedObjectRow >= len(a.cachedObjects) {
-		return
-	}
-	obj := a.cachedObjects[a.selectedObjectRow]
-	bucket := a.currentItem.ID
-	isText := awspkg.IsTextFile(obj.Key)
-
-	doOpen := func() {
-		if isText {
-			a.downloadAndShow(bucket, obj.Key)
-		} else {
-			a.downloadAndOpen(bucket, obj.Key)
-		}
-	}
-
-	switch {
-	case isText && obj.Size < awspkg.TextSizeLimit:
-		doOpen() // silent open for small text files
-	case obj.Size >= warnSizeThreshold:
-		msg := fmt.Sprintf("File is %s. Download anyway? [y/n]", awspkg.FormatSize(obj.Size))
-		a.showPrompt(msg, doOpen, nil)
-	default:
-		msg := fmt.Sprintf("Open %s? [y/n]", obj.Key)
-		a.showPrompt(msg, doOpen, nil)
-	}
 }
 
 // cleanup removes all temp files created during the session.

@@ -11,11 +11,9 @@ type panels struct {
 	items       *tview.List
 	tabBar      *tview.TextView // single-row tab header
 	detail      *tview.TextView // scrollable content area
-	expand      *tview.TextView // expansion panel (hidden by default)
-	rightFlex   *tview.Flex     // vertical flex containing tabBar+detail+expand
+	rightFlex   *tview.Flex     // vertical flex containing tabBar+detail
 	status      *tview.TextView
 	searchInput *tview.InputField
-	prompt      *tview.TextView // y/n prompt widget
 	statusPages *tview.Pages
 	hintsText   string
 	focused     int // 0=resources, 1=items, 2=detail
@@ -48,16 +46,9 @@ func newPanels(t Theme) *panels {
 	detail.SetFocusFunc(func() { detail.SetBorderColor(fc) }).
 		SetBlurFunc(func() { detail.SetBorderColor(tcell.ColorDefault) })
 
-	expand := tview.NewTextView().
-		SetDynamicColors(true).
-		SetScrollable(true).
-		SetWrap(false)
-	expand.SetBorder(true).SetTitle(" Expand ")
-
 	rightFlex := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tabBar, 1, 0, false).
-		AddItem(detail, 0, 2, false).
-		AddItem(expand, 0, 0, false) // proportion 0 = hidden
+		AddItem(detail, 0, 1, false)
 
 	hints := t.HeaderTag + "Tab[-]/" + t.HeaderTag + "S-Tab[-]: panel   " +
 		t.HeaderTag + "j/k[-]: navigate   " +
@@ -73,24 +64,19 @@ func newPanels(t Theme) *panels {
 		SetLabelColor(tcell.ColorYellow).
 		SetFieldBackgroundColor(tcell.ColorDefault)
 
-	prompt := tview.NewTextView().SetDynamicColors(true)
-
 	statusPages := tview.NewPages().
 		AddPage("hints", status, true, true).
-		AddPage("search", searchInput, true, false).
-		AddPage("prompt", prompt, true, false)
+		AddPage("search", searchInput, true, false)
 
 	return &panels{
 		resources:   resources,
 		items:       items,
 		tabBar:      tabBar,
 		detail:      detail,
-		expand:      expand,
 		rightFlex:   rightFlex,
 		status:      status,
 		hintsText:   " " + hints,
 		searchInput: searchInput,
-		prompt:      prompt,
 		statusPages: statusPages,
 	}
 }

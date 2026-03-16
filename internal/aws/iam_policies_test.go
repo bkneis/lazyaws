@@ -92,17 +92,28 @@ func TestIAMPoliciesProvider_ListItems_Filter(t *testing.T) {
 	}
 }
 
-func TestIAMPoliciesProvider_Expand(t *testing.T) {
+func TestIAMPoliciesProvider_DocumentTab(t *testing.T) {
 	doc := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:*","Resource":"*"}]}`
 	stub := &stubIAMPoliciesAPI{document: doc}
 	p := NewIAMPoliciesProviderWithClient(stub)
 	item := Item{ID: "arn:aws:iam::123:policy/MyPolicy", Meta: map[string]string{"defaultVersionId": "v1"}}
 
-	content, err := p.Expand(context.Background(), item)
+	tabs := p.Tabs()
+	var docTab TabDef
+	for _, tab := range tabs {
+		if tab.Label == "Document" {
+			docTab = tab
+			break
+		}
+	}
+	if docTab.Fetch == nil {
+		t.Fatal("Document tab not found")
+	}
+
+	content, err := docTab.Fetch(context.Background(), item)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Verify output is pretty-printed JSON (indented, key present)
 	if !strings.Contains(content, `"Version": "2012-10-17"`) {
 		t.Errorf("want pretty-printed JSON with Version field, got %q", content)
 	}
