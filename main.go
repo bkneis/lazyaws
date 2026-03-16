@@ -43,6 +43,12 @@ func main() {
 		awspkg.NewCloudWatchLogsProvider(cfg, *local),
 		awspkg.NewEventBridgeProvider(cfg, *local),
 		awspkg.NewEC2Provider(cfg, *local),
+		awspkg.NewSAMProvider(cfg, *local),
+		awspkg.NewEC2VPCProvider(cfg, *local),
+		awspkg.NewEC2VolumesProvider(cfg, *local),
+		awspkg.NewEC2ImagesProvider(cfg, *local),
+		awspkg.NewELBProvider(cfg, *local),
+		awspkg.NewASGProvider(cfg, *local),
 	}
 
 	app := ui.NewApp(providers, theme)
