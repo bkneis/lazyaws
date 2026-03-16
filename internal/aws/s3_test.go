@@ -3,6 +3,7 @@ package aws_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -76,6 +77,13 @@ func (s *stubS3) ListObjectsV2(_ context.Context, _ *s3.ListObjectsV2Input, _ ..
 func (s *stubS3) GetBucketPolicy(_ context.Context, _ *s3.GetBucketPolicyInput, _ ...func(*s3.Options)) (*s3.GetBucketPolicyOutput, error) {
 	return &s3.GetBucketPolicyOutput{
 		Policy: aws.String(`{"Version":"2012-10-17","Statement":[]}`),
+	}, nil
+}
+
+func (s *stubS3) GetObject(_ context.Context, in *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	content := "hello world"
+	return &s3.GetObjectOutput{
+		Body: io.NopCloser(strings.NewReader(content)),
 	}, nil
 }
 
@@ -206,5 +214,39 @@ func TestS3Provider_TabOverview_EmptyRegion(t *testing.T) {
 	}
 	if !strings.Contains(content, "us-east-1") {
 		t.Errorf("expected us-east-1 for empty LocationConstraint, got:\n%s", content)
+	}
+}
+
+func TestS3Provider_GetLastObjects(t *testing.T) {
+	created := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	stub := &stubS3{
+		buckets: []s3types.Bucket{{Name: aws.String("my-bucket"), CreationDate: &created}},
+	}
+	p := awspkg.NewS3ProviderWithClient(stub)
+	item := awspkg.Item{ID: "my-bucket", Name: "my-bucket"}
+	// call through the exported Tabs() path
+	_, err := p.Tabs()[1].Fetch(context.Background(), item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := p.GetLastObjects()
+	if len(got) != 1 || got[0].Key != "images/hero.png" {
+		t.Errorf("want [{images/hero.png ...}], got %v", got)
+	}
+	if got[0].SizeFormatted == "" {
+		t.Error("want non-empty SizeFormatted")
+	}
+}
+
+func TestS3Provider_DownloadObject(t *testing.T) {
+	stub := &stubS3{}
+	p := awspkg.NewS3ProviderWithClient(stub)
+	var buf strings.Builder
+	err := p.DownloadObject(context.Background(), "my-bucket", "readme.txt", &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if buf.String() != "hello world" {
+		t.Errorf("want 'hello world', got %q", buf.String())
 	}
 }

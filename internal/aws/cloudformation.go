@@ -9,6 +9,19 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
 )
 
+// cfnTypeToProvider maps CloudFormation resource types to lazyaws provider names.
+// PhysicalResourceId matches Item.ID directly for each provider.
+var cfnTypeToProvider = map[string]string{
+	"AWS::Lambda::Function":       "Lambda",
+	"AWS::SQS::Queue":             "SQS",
+	"AWS::SNS::Topic":             "SNS",
+	"AWS::S3::Bucket":             "S3",
+	"AWS::ApiGateway::RestApi":    "API Gateway",
+	"AWS::ApiGatewayV2::Api":      "API Gateway",
+	"AWS::IAM::Role":              "IAM Roles",
+	"AWS::SecretsManager::Secret": "Secrets Manager",
+}
+
 type CFAPI interface {
 	DescribeStacks(ctx context.Context, in *cloudformation.DescribeStacksInput, opts ...func(*cloudformation.Options)) (*cloudformation.DescribeStacksOutput, error)
 	ListStackResources(ctx context.Context, in *cloudformation.ListStackResourcesInput, opts ...func(*cloudformation.Options)) (*cloudformation.ListStackResourcesOutput, error)
@@ -90,11 +103,15 @@ func (p *CFProvider) tabResources(ctx context.Context, item Item) (string, error
 	}
 	rows := make([][]string, len(out.StackResourceSummaries))
 	for i, r := range out.StackResourceSummaries {
-		rows[i] = []string{
-			awssdk.ToString(r.LogicalResourceId),
-			awssdk.ToString(r.ResourceType),
-			string(r.ResourceStatus),
+		logicalID := awssdk.ToString(r.LogicalResourceId)
+		physicalID := awssdk.ToString(r.PhysicalResourceId)
+		resourceType := awssdk.ToString(r.ResourceType)
+		displayID := logicalID
+		if provider, ok := cfnTypeToProvider[resourceType]; ok {
+			targetID := physicalID
+			displayID = Link(logicalID, provider, targetID)
 		}
+		rows[i] = []string{displayID, resourceType, string(r.ResourceStatus)}
 	}
 	return Table([]string{"Logical ID", "Type", "Status"}, rows), nil
 }

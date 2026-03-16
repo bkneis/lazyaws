@@ -3,6 +3,9 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	awspkg "github.com/bryanl/lazyaws/internal/aws"
@@ -10,17 +13,33 @@ import (
 	"github.com/rivo/tview"
 )
 
+// navState records the TUI position before following a cross-resource link.
+type navState struct {
+	providerIdx int
+	itemIdx     int
+	tabIdx      int
+}
+
 // App is the root TUI application.
 type App struct {
-	tapp           *tview.Application
-	panels         *panels
-	providers      []awspkg.Provider
-	activeProvider int
-	activeTab      int
-	tabLoaded      []bool
-	tabCache       []string
-	currentItem    awspkg.Item
-	preFocusIdx    int
+	tapp              *tview.Application
+	panels            *panels
+	providers         []awspkg.Provider
+	loadedItems       []awspkg.Item // mirrors items list for Enter handler
+	activeProvider    int
+	activeTab         int
+	tabLoaded         []bool
+	tabCache          []string
+	currentItem       awspkg.Item
+	preFocusIdx       int
+	tabBarOffsets     []int // display-column start per tab (for mouse click)
+	expandVisible     bool  // whether expand panel is shown
+	navStack          []navState
+	selectedObjectRow int
+	cachedObjects     []awspkg.S3ObjectItem
+	tmpFiles          []string // temp files to clean up on exit
+	promptYesHandler  func()
+	promptNoHandler   func()
 }
 
 // NewApp constructs the App with the given resource providers.
@@ -59,13 +78,98 @@ func (a *App) build() {
 		}
 	})
 
+	a.panels.items.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() != tcell.KeyEnter {
+			return event
+		}
+		provider := a.providers[a.activeProvider]
+		exp, ok := provider.(awspkg.Expandable)
+		if !ok {
+			return event // pass through to AddItem callback for non-Expandable
+		}
+		idx := a.panels.items.GetCurrentItem()
+		if idx < 0 || idx >= len(a.loadedItems) {
+			return event
+		}
+		item := a.loadedItems[idx]
+		a.selectItem(a.activeProvider, item)
+		go func() {
+			content, err := exp.Expand(context.Background(), item)
+			a.tapp.QueueUpdateDraw(func() {
+				if err != nil {
+					a.showStatusMessage(fmt.Sprintf("[red]Expand error: %v[-]", err))
+					return
+				}
+				a.showExpand(content)
+			})
+		}()
+		return nil // consume — AddItem callback suppressed for Expandable providers
+	})
+
 	leftCol := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(a.panels.resources, 0, 1, true).
 		AddItem(a.panels.items, 0, 2, false)
 
 	layout := tview.NewFlex().
 		AddItem(leftCol, 25, 0, true).
-		AddItem(a.panels.detail, 0, 1, false)
+		AddItem(a.panels.rightFlex, 0, 1, false)
+
+	// Wire tabBar mouse capture for clickable tabs
+	a.panels.tabBar.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		if action == tview.MouseLeftClick {
+			screenCol, _ := event.Position()            // screen-absolute column
+			widgetX, _, _, _ := a.panels.tabBar.GetRect() // widget's left edge on screen
+			a.selectTabByColumn(screenCol - widgetX)
+			return action, nil
+		}
+		return action, event
+	})
+
+	// Wire content TextView for link clicks and Enter to follow links
+	a.panels.detail.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		if action == tview.MouseLeftClick {
+			a.followHighlightedLink()
+		}
+		return action, event
+	})
+	a.panels.detail.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEnter {
+			if a.isS3ObjectsTabFocused() {
+				a.openObject()
+				return nil
+			}
+			if a.followHighlightedLink() {
+				return nil
+			}
+		}
+		return event
+	})
+
+	a.panels.prompt.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Rune() {
+		case 'y', 'Y':
+			a.panels.statusPages.SwitchToPage("hints")
+			a.resetHints()
+			a.tapp.SetFocus(a.panels.detail)
+			if h := a.promptYesHandler; h != nil {
+				a.promptYesHandler = nil
+				a.promptNoHandler = nil
+				h()
+			}
+			return nil
+		case 'n', 'N':
+			a.panels.statusPages.SwitchToPage("hints")
+			a.resetHints()
+			a.tapp.SetFocus(a.panels.detail)
+			if h := a.promptNoHandler; h != nil {
+				a.promptYesHandler = nil
+				a.promptNoHandler = nil
+				h()
+			}
+			return nil
+		}
+		return event
+	})
 
 	outer := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(layout, 0, 1, true).
@@ -80,9 +184,14 @@ func (a *App) build() {
 // loadItems fetches items for provider i in a background goroutine.
 // Pass query="" to load all items with no filter.
 func (a *App) loadItems(i int, query string) {
+	a.dismissPrompt()
 	a.tabLoaded = nil
 	a.tabCache = nil
+	a.loadedItems = nil
+	a.activeTab = 0
 	a.currentItem = awspkg.Item{}
+	a.selectedObjectRow = 0
+	a.cachedObjects = nil
 	a.panels.items.Clear()
 	a.panels.detail.SetText("Loading...")
 
@@ -91,6 +200,7 @@ func (a *App) loadItems(i int, query string) {
 		a.tapp.QueueUpdateDraw(func() {
 			a.panels.items.Clear()
 			a.panels.detail.Clear()
+			a.loadedItems = items // assign before error check so it's always set
 
 			if err != nil {
 				a.panels.detail.SetText(fmt.Sprintf("[red]Error: %v[-]", err))
@@ -144,8 +254,11 @@ func (a *App) restoreFocus() {
 
 // selectItem resets tab state and loads the first tab for the selected item.
 func (a *App) selectItem(providerIdx int, item awspkg.Item) {
+	a.dismissPrompt()
 	a.currentItem = item
 	a.activeTab = 0
+	a.selectedObjectRow = 0
+	a.cachedObjects = nil
 	tabs := a.providers[providerIdx].Tabs()
 	a.tabLoaded = make([]bool, len(tabs))
 	a.tabCache = make([]string, len(tabs))
@@ -163,12 +276,21 @@ func (a *App) loadTab(providerIdx, tabIdx int, item awspkg.Item) {
 	go func() {
 		content, err := tabs[tabIdx].Fetch(context.Background(), item)
 		a.tapp.QueueUpdateDraw(func() {
+			if a.activeProvider != providerIdx {
+				return // provider changed while fetch was in-flight
+			}
 			if err != nil {
 				a.tabCache[tabIdx] = fmt.Sprintf("[red]Error: %v[-]", err)
 			} else {
 				a.tabCache[tabIdx] = content
 			}
 			a.tabLoaded[tabIdx] = true
+			// Cache S3 objects for row selection when the Objects tab finishes loading.
+			if s3p, ok := a.providers[providerIdx].(*awspkg.S3Provider); ok {
+				if tabIdx < len(tabs) && tabs[tabIdx].Label == "Objects" {
+					a.cachedObjects = s3p.GetLastObjects()
+				}
+			}
 			if a.activeTab == tabIdx {
 				a.renderDetail()
 			}
@@ -176,31 +298,146 @@ func (a *App) loadTab(providerIdx, tabIdx int, item awspkg.Item) {
 	}()
 }
 
-// renderDetail writes the tab bar + current tab content to pane 3.
+// renderDetail writes the tab bar to tabBar widget and content to detail widget.
 func (a *App) renderDetail() {
 	tabs := a.providers[a.activeProvider].Tabs()
 	if len(tabs) == 0 {
 		return
 	}
-	bar := renderTabBar(tabs, a.activeTab)
+	a.renderTabBar(tabs)
 	content := "  ... fetching"
 	if a.activeTab < len(a.tabLoaded) && a.tabLoaded[a.activeTab] {
-		content = a.tabCache[a.activeTab]
-	}
-	a.panels.detail.SetText(bar + "\n\n" + content).ScrollToBeginning()
-}
-
-// renderTabBar builds the tab bar string with active tab highlighted in cyan.
-func renderTabBar(tabs []awspkg.TabDef, active int) string {
-	parts := make([]string, len(tabs))
-	for i, t := range tabs {
-		if i == active {
-			parts[i] = "[cyan][[]" + t.Label + "][-]"
+		if len(a.cachedObjects) > 0 && tabs[a.activeTab].Label == "Objects" {
+			content = a.renderObjectsWithHighlight()
 		} else {
-			parts[i] = "[gray]" + t.Label + "[-]"
+			content = a.tabCache[a.activeTab]
 		}
 	}
-	return " " + strings.Join(parts, "  ")
+	a.panels.detail.SetText(content).ScrollToBeginning()
+}
+
+// renderObjectsWithHighlight rebuilds the Objects tab table with the selected
+// row highlighted in aqua.
+func (a *App) renderObjectsWithHighlight() string {
+	if len(a.cachedObjects) == 0 {
+		return a.tabCache[a.activeTab]
+	}
+	headers := []string{"Key", "Size", "Last Modified"}
+	rows := make([][]string, len(a.cachedObjects))
+	for i, obj := range a.cachedObjects {
+		rows[i] = []string{obj.Key, obj.SizeFormatted, obj.LastModified}
+	}
+
+	widths := make([]int, len(headers))
+	for i, h := range headers {
+		widths[i] = len(h)
+	}
+	for _, row := range rows {
+		for i, cell := range row {
+			if i < len(widths) && len(cell) > widths[i] {
+				widths[i] = len(cell)
+			}
+		}
+	}
+
+	padded := make([]string, len(headers))
+	for i, h := range headers {
+		padded[i] = fmt.Sprintf("%-*s", widths[i]+2, h)
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "  [cyan]%s[-]\n  ", strings.Join(padded, ""))
+	for _, w := range widths {
+		sb.WriteString(strings.Repeat("─", w) + "  ")
+	}
+	sb.WriteString("\n")
+	for i, row := range rows {
+		if i == a.selectedObjectRow {
+			sb.WriteString("  [aqua]")
+		} else {
+			sb.WriteString("  ")
+		}
+		for j, cell := range row {
+			if j < len(widths) {
+				fmt.Fprintf(&sb, "%-*s", widths[j]+2, cell)
+			}
+		}
+		if i == a.selectedObjectRow {
+			sb.WriteString("[-]")
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// isS3ObjectsTabFocused returns true when focus is on the detail pane,
+// the active provider is S3, the active tab is Objects, and objects are cached.
+func (a *App) isS3ObjectsTabFocused() bool {
+	if a.tapp.GetFocus() != a.panels.detail {
+		return false
+	}
+	if _, ok := a.providers[a.activeProvider].(*awspkg.S3Provider); !ok {
+		return false
+	}
+	tabs := a.providers[a.activeProvider].Tabs()
+	if a.activeTab >= len(tabs) || tabs[a.activeTab].Label != "Objects" {
+		return false
+	}
+	return len(a.cachedObjects) > 0
+}
+
+// moveObjectRow adjusts selectedObjectRow by delta (wraps) and re-renders.
+func (a *App) moveObjectRow(delta int) {
+	n := len(a.cachedObjects)
+	if n == 0 {
+		return
+	}
+	a.selectedObjectRow = (a.selectedObjectRow + delta + n) % n
+	a.renderDetail()
+}
+
+// renderTabBar writes the 2-row tab bar to the tabBar widget and records
+// display-column offsets for mouse click detection.
+func (a *App) renderTabBar(tabs []awspkg.TabDef) {
+	var line1, line2 strings.Builder
+	a.tabBarOffsets = make([]int, len(tabs))
+	col := 0
+	for i, tab := range tabs {
+		label := " " + tab.Label + " "
+		a.tabBarOffsets[i] = col
+		if i == a.activeTab {
+			line1.WriteString("[aqua::bu]" + label + "[-::-]")
+			line2.WriteString(strings.Repeat("─", len(label)))
+		} else {
+			line1.WriteString("[gray]" + label + "[-]")
+			line2.WriteString(strings.Repeat(" ", len(label)))
+		}
+		col += len(label) // display columns (no tag chars)
+	}
+	a.panels.tabBar.SetText(line1.String() + "\n" + line2.String())
+}
+
+// selectTab switches to the given tab index, fetching if not yet loaded.
+func (a *App) selectTab(idx int) {
+	tabs := a.providers[a.activeProvider].Tabs()
+	if idx < 0 || idx >= len(tabs) || len(a.tabLoaded) == 0 {
+		return
+	}
+	a.activeTab = idx
+	if !a.tabLoaded[idx] {
+		a.loadTab(a.activeProvider, idx, a.currentItem)
+	} else {
+		a.renderDetail()
+	}
+}
+
+// selectTabByColumn maps a clicked display column to the tab index and selects it.
+func (a *App) selectTabByColumn(col int) {
+	for i := len(a.tabBarOffsets) - 1; i >= 0; i-- {
+		if col >= a.tabBarOffsets[i] {
+			a.selectTab(i)
+			return
+		}
+	}
 }
 
 // nextTab advances to the next tab, fetching if not yet loaded.
@@ -209,12 +446,7 @@ func (a *App) nextTab() {
 	if len(tabs) == 0 || len(a.tabLoaded) == 0 {
 		return
 	}
-	a.activeTab = (a.activeTab + 1) % len(tabs)
-	if !a.tabLoaded[a.activeTab] {
-		a.loadTab(a.activeProvider, a.activeTab, a.currentItem)
-	} else {
-		a.renderDetail()
-	}
+	a.selectTab((a.activeTab + 1) % len(tabs))
 }
 
 // prevTab retreats to the previous tab, fetching if not yet loaded.
@@ -224,12 +456,7 @@ func (a *App) prevTab() {
 		return
 	}
 	n := len(tabs)
-	a.activeTab = (a.activeTab + n - 1) % n
-	if !a.tabLoaded[a.activeTab] {
-		a.loadTab(a.activeProvider, a.activeTab, a.currentItem)
-	} else {
-		a.renderDetail()
-	}
+	a.selectTab((a.activeTab + n - 1) % n)
 }
 
 // refresh reloads the currently active provider's item list with no filter.
@@ -240,7 +467,298 @@ func (a *App) refresh() {
 	a.loadItems(a.activeProvider, "")
 }
 
+// showExpand displays content in the expand panel below the detail pane.
+func (a *App) showExpand(content string) {
+	a.panels.expand.SetText(content).ScrollToBeginning()
+	a.panels.rightFlex.ResizeItem(a.panels.expand, 0, 1)
+	a.expandVisible = true
+	a.tapp.SetFocus(a.panels.expand)
+}
+
+// hideExpand hides the expand panel and returns focus to the items list.
+func (a *App) hideExpand() {
+	a.panels.rightFlex.ResizeItem(a.panels.expand, 0, 0)
+	a.expandVisible = false
+	a.tapp.SetFocus(a.panels.items)
+	a.panels.focused = 1 // items
+}
+
+// showStatusMessage temporarily sets status bar to a message.
+func (a *App) showStatusMessage(msg string) {
+	a.panels.statusPages.SwitchToPage("hints")
+	a.panels.status.SetText(msg)
+}
+
+// handleEsc implements the Esc priority: expand > navStack > pass-through.
+// Returns true if the event was consumed.
+func (a *App) handleEsc() bool {
+	if a.expandVisible {
+		a.hideExpand()
+		return true
+	}
+	if a.navigateBack() {
+		return true
+	}
+	return false
+}
+
+// navigateTo follows a cross-resource link to the given provider and item ID.
+// It pushes the current position onto navStack before navigating.
+func (a *App) navigateTo(providerName, targetID string) {
+	// Find provider index
+	targetProviderIdx := -1
+	for i, p := range a.providers {
+		if p.Name() == providerName {
+			targetProviderIdx = i
+			break
+		}
+	}
+	if targetProviderIdx == -1 {
+		a.showStatusMessage(fmt.Sprintf("[red]No provider for: %s[-]", providerName))
+		return
+	}
+
+	// Push current state
+	a.navStack = append(a.navStack, navState{
+		providerIdx: a.activeProvider,
+		itemIdx:     a.panels.items.GetCurrentItem(),
+		tabIdx:      a.activeTab,
+	})
+
+	// If provider items not loaded, load them first
+	if a.activeProvider != targetProviderIdx || len(a.loadedItems) == 0 {
+		a.showStatusMessage("[yellow]navigating…[-]")
+		a.activeProvider = targetProviderIdx
+		go func() {
+			items, err := a.providers[targetProviderIdx].ListItems(context.Background(), "")
+			a.tapp.QueueUpdateDraw(func() {
+				if err != nil {
+					a.navStack = a.navStack[:len(a.navStack)-1] // pop on error
+					a.showStatusMessage(fmt.Sprintf("[red]Navigation error: %v[-]", err))
+					return
+				}
+				a.loadedItems = items
+				a.panels.items.Clear()
+				for _, item := range items {
+					item := item
+					a.panels.items.AddItem(item.Name, "", 0, func() {
+						a.selectItem(targetProviderIdx, item)
+					})
+				}
+				a.resetHints()
+				a.panels.resources.SetCurrentItem(targetProviderIdx)
+				a.findAndSelectItem(targetProviderIdx, targetID)
+			})
+		}()
+		return
+	}
+
+	a.panels.resources.SetCurrentItem(targetProviderIdx)
+	a.findAndSelectItem(targetProviderIdx, targetID)
+}
+
+// findAndSelectItem finds the item with targetID in loadedItems and selects it.
+func (a *App) findAndSelectItem(providerIdx int, targetID string) {
+	for i, item := range a.loadedItems {
+		if item.ID == targetID {
+			a.panels.items.SetCurrentItem(i)
+			a.selectItem(providerIdx, item)
+			return
+		}
+	}
+	a.navStack = a.navStack[:len(a.navStack)-1] // pop — target not found
+	a.showStatusMessage(fmt.Sprintf("[red]Resource not found: %s[-]", targetID))
+}
+
+// navigateBack pops the navigation stack and restores the previous position.
+func (a *App) navigateBack() bool {
+	if len(a.navStack) == 0 {
+		return false
+	}
+	state := a.navStack[len(a.navStack)-1]
+	a.navStack = a.navStack[:len(a.navStack)-1]
+
+	a.activeProvider = state.providerIdx
+	a.panels.resources.SetCurrentItem(state.providerIdx)
+	// Re-load items for the restored provider (uses cache if already loaded)
+	a.loadItems(state.providerIdx, "")
+	// Item selection is reset to first item by loadItems; user re-selects manually
+	return true
+}
+
+// followHighlightedLink reads the currently highlighted region from the detail
+// TextView and navigates to it if it is a link region.
+func (a *App) followHighlightedLink() bool {
+	highlights := a.panels.detail.GetHighlights()
+	if len(highlights) == 0 {
+		return false
+	}
+	region := highlights[0]
+	if !strings.HasPrefix(region, "link:") {
+		return false
+	}
+	// region format: "link:{providerName}:{targetID}"
+	rest := strings.TrimPrefix(region, "link:")
+	sep := strings.Index(rest, ":")
+	if sep < 0 {
+		return false
+	}
+	providerName := rest[:sep]
+	targetID := rest[sep+1:]
+	a.navigateTo(providerName, targetID)
+	return true
+}
+
+// showPrompt shows a y/n prompt in the status bar and wires the response handlers.
+func (a *App) showPrompt(msg string, onYes, onNo func()) {
+	a.promptYesHandler = onYes
+	a.promptNoHandler = onNo
+	a.panels.prompt.SetText(" " + msg)
+	a.panels.statusPages.SwitchToPage("prompt")
+	a.tapp.SetFocus(a.panels.prompt)
+}
+
+// dismissPrompt cancels any pending prompt without firing handlers.
+// Called when navigation moves away mid-prompt.
+func (a *App) dismissPrompt() {
+	if a.promptYesHandler != nil || a.promptNoHandler != nil {
+		a.promptYesHandler = nil
+		a.promptNoHandler = nil
+		a.panels.statusPages.SwitchToPage("hints")
+		a.resetHints()
+	}
+}
+
+var textExtensions = map[string]bool{
+	".json": true, ".txt": true, ".yaml": true, ".yml": true,
+	".log": true, ".csv": true, ".xml": true, ".md": true,
+	".toml": true, ".ini": true, ".sh": true, ".env": true,
+	".conf": true, ".properties": true,
+}
+
+func isTextFile(key string) bool {
+	ext := strings.ToLower(filepath.Ext(key))
+	return textExtensions[ext]
+}
+
+const (
+	textSizeThreshold = 10 * 1024 * 1024  // 10 MB — text files below this open silently
+	warnSizeThreshold = 100 * 1024 * 1024 // 100 MB — all files above this get a size warning
+)
+
+// downloadAndShow streams the S3 object to a temp file and shows the content in the expand panel.
+func (a *App) downloadAndShow(bucket, key string) {
+	s3p, ok := a.providers[a.activeProvider].(*awspkg.S3Provider)
+	if !ok {
+		return
+	}
+	a.showStatusMessage("[yellow]Downloading…[-]")
+	go func() {
+		f, err := os.CreateTemp("", "lazyaws-*")
+		if err != nil {
+			a.tapp.QueueUpdateDraw(func() {
+				a.showStatusMessage(fmt.Sprintf("[red]Temp file error: %v[-]", err))
+			})
+			return
+		}
+		if err := s3p.DownloadObject(context.Background(), bucket, key, f); err != nil {
+			f.Close()
+			os.Remove(f.Name())
+			a.tapp.QueueUpdateDraw(func() {
+				a.showStatusMessage(fmt.Sprintf("[red]Download error: %v[-]", err))
+			})
+			return
+		}
+		f.Close()
+		tmpPath := f.Name()
+		content, readErr := os.ReadFile(tmpPath)
+		a.tapp.QueueUpdateDraw(func() {
+			a.tmpFiles = append(a.tmpFiles, tmpPath)
+			a.resetHints()
+			if readErr != nil {
+				a.showStatusMessage(fmt.Sprintf("[red]Read error: %v[-]", readErr))
+				return
+			}
+			a.showExpand(string(content))
+		})
+	}()
+}
+
+// downloadAndOpen streams the S3 object to a temp file and opens it with xdg-open.
+func (a *App) downloadAndOpen(bucket, key string) {
+	s3p, ok := a.providers[a.activeProvider].(*awspkg.S3Provider)
+	if !ok {
+		return
+	}
+	a.showStatusMessage("[yellow]Downloading…[-]")
+	go func() {
+		f, err := os.CreateTemp("", "lazyaws-*")
+		if err != nil {
+			a.tapp.QueueUpdateDraw(func() {
+				a.showStatusMessage(fmt.Sprintf("[red]Temp file error: %v[-]", err))
+			})
+			return
+		}
+		if err := s3p.DownloadObject(context.Background(), bucket, key, f); err != nil {
+			f.Close()
+			os.Remove(f.Name())
+			a.tapp.QueueUpdateDraw(func() {
+				a.showStatusMessage(fmt.Sprintf("[red]Download error: %v[-]", err))
+			})
+			return
+		}
+		f.Close()
+		tmpPath := f.Name()
+		openErr := exec.Command("xdg-open", tmpPath).Start()
+		a.tapp.QueueUpdateDraw(func() {
+			a.tmpFiles = append(a.tmpFiles, tmpPath)
+			if openErr != nil {
+				a.showStatusMessage(fmt.Sprintf("[red]Failed to open: %v[-]", openErr))
+				return
+			}
+			a.resetHints()
+		})
+	}()
+}
+
+// openObject handles Enter on a selected S3 object row.
+func (a *App) openObject() {
+	if len(a.cachedObjects) == 0 || a.selectedObjectRow >= len(a.cachedObjects) {
+		return
+	}
+	obj := a.cachedObjects[a.selectedObjectRow]
+	bucket := a.currentItem.ID
+	isText := isTextFile(obj.Key)
+
+	doOpen := func() {
+		if isText {
+			a.downloadAndShow(bucket, obj.Key)
+		} else {
+			a.downloadAndOpen(bucket, obj.Key)
+		}
+	}
+
+	switch {
+	case isText && obj.Size < textSizeThreshold:
+		doOpen() // silent open for small text files
+	case obj.Size >= warnSizeThreshold:
+		msg := fmt.Sprintf("File is %s. Download anyway? [y/n]", awspkg.FormatSize(obj.Size))
+		a.showPrompt(msg, doOpen, nil)
+	default:
+		msg := fmt.Sprintf("Open %s? [y/n]", obj.Key)
+		a.showPrompt(msg, doOpen, nil)
+	}
+}
+
+// cleanup removes all temp files created during the session.
+func (a *App) cleanup() {
+	for _, path := range a.tmpFiles {
+		os.Remove(path)
+	}
+}
+
 // Run starts the tview event loop.
 func (a *App) Run() error {
+	defer a.cleanup()
 	return a.tapp.Run()
 }

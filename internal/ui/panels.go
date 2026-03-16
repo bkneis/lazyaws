@@ -13,9 +13,13 @@ const hintsText = " [cyan]Tab[-]/[cyan]S-Tab[-]: panel   [cyan]j/k[-]: navigate 
 type panels struct {
 	resources   *tview.List
 	items       *tview.List
-	detail      *tview.TextView
+	tabBar      *tview.TextView  // 2-row tab header (label row + underline row)
+	detail      *tview.TextView  // scrollable content area
+	expand      *tview.TextView  // expansion panel (hidden by default)
+	rightFlex   *tview.Flex      // vertical flex containing tabBar+detail+expand
 	status      *tview.TextView
 	searchInput *tview.InputField
+	prompt      *tview.TextView  // y/n prompt widget (used in Feature 4)
 	statusPages *tview.Pages
 	focused     int // 0=resources, 1=items, 2=detail
 }
@@ -33,13 +37,29 @@ func newPanels() *panels {
 	items.SetFocusFunc(func() { items.SetBorderColor(focusColor) }).
 		SetBlurFunc(func() { items.SetBorderColor(tcell.ColorDefault) })
 
+	tabBar := tview.NewTextView().
+		SetDynamicColors(true).
+		SetRegions(true)
+
 	detail := tview.NewTextView().
 		SetDynamicColors(true).
 		SetScrollable(true).
-		SetWrap(false)
+		SetWrap(false).
+		SetRegions(true)
 	detail.SetBorder(true).SetTitle(" Detail ")
 	detail.SetFocusFunc(func() { detail.SetBorderColor(focusColor) }).
 		SetBlurFunc(func() { detail.SetBorderColor(tcell.ColorDefault) })
+
+	expand := tview.NewTextView().
+		SetDynamicColors(true).
+		SetScrollable(true).
+		SetWrap(false)
+	expand.SetBorder(true).SetTitle(" Expand ")
+
+	rightFlex := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(tabBar, 2, 0, false).
+		AddItem(detail, 0, 2, false).
+		AddItem(expand, 0, 0, false) // proportion 0 = hidden
 
 	status := tview.NewTextView().SetDynamicColors(true).SetText(hintsText)
 
@@ -48,16 +68,23 @@ func newPanels() *panels {
 		SetLabelColor(tcell.ColorYellow).
 		SetFieldBackgroundColor(tcell.ColorDefault)
 
+	prompt := tview.NewTextView().SetDynamicColors(true)
+
 	statusPages := tview.NewPages().
 		AddPage("hints", status, true, true).
-		AddPage("search", searchInput, true, false)
+		AddPage("search", searchInput, true, false).
+		AddPage("prompt", prompt, true, false)
 
 	return &panels{
 		resources:   resources,
 		items:       items,
+		tabBar:      tabBar,
 		detail:      detail,
+		expand:      expand,
+		rightFlex:   rightFlex,
 		status:      status,
 		searchInput: searchInput,
+		prompt:      prompt,
 		statusPages: statusPages,
 	}
 }

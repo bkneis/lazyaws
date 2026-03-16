@@ -16,6 +16,7 @@ type APIGatewayV2API interface {
 	GetApi(ctx context.Context, in *apigwv2.GetApiInput, opts ...func(*apigwv2.Options)) (*apigwv2.GetApiOutput, error)
 	GetRoutes(ctx context.Context, in *apigwv2.GetRoutesInput, opts ...func(*apigwv2.Options)) (*apigwv2.GetRoutesOutput, error)
 	GetStages(ctx context.Context, in *apigwv2.GetStagesInput, opts ...func(*apigwv2.Options)) (*apigwv2.GetStagesOutput, error)
+	GetIntegration(ctx context.Context, in *apigwv2.GetIntegrationInput, opts ...func(*apigwv2.Options)) (*apigwv2.GetIntegrationOutput, error)
 }
 
 type APIGatewayV1API interface {
@@ -23,6 +24,7 @@ type APIGatewayV1API interface {
 	GetRestApi(ctx context.Context, in *apigwv1.GetRestApiInput, opts ...func(*apigwv1.Options)) (*apigwv1.GetRestApiOutput, error)
 	GetResources(ctx context.Context, in *apigwv1.GetResourcesInput, opts ...func(*apigwv1.Options)) (*apigwv1.GetResourcesOutput, error)
 	GetStages(ctx context.Context, in *apigwv1.GetStagesInput, opts ...func(*apigwv1.Options)) (*apigwv1.GetStagesOutput, error)
+	GetMethod(ctx context.Context, in *apigwv1.GetMethodInput, opts ...func(*apigwv1.Options)) (*apigwv1.GetMethodOutput, error)
 }
 
 type APIGatewayProvider struct {
@@ -136,7 +138,26 @@ func (p *APIGatewayProvider) tabRoutes(ctx context.Context, item Item) (string, 
 		}
 		rows := make([][]string, len(out.Items))
 		for i, r := range out.Items {
-			rows[i] = []string{awssdk.ToString(r.RouteKey), awssdk.ToString(r.Target)}
+			target := awssdk.ToString(r.Target)
+			if strings.HasPrefix(target, "integrations/") {
+				integrationID := strings.TrimPrefix(target, "integrations/")
+				intOut, err := p.v2.GetIntegration(ctx, &apigwv2.GetIntegrationInput{
+					ApiId:         awssdk.String(item.ID),
+					IntegrationId: awssdk.String(integrationID),
+				})
+				if err == nil && intOut.IntegrationUri != nil {
+					fnName := parseLambdaFromIntegrationURI(awssdk.ToString(intOut.IntegrationUri))
+					if fnName != "" {
+						target = Link(fnName, "Lambda", fnName)
+					}
+				}
+			} else if target != "" {
+				fnName := parseLambdaFromIntegrationURI(target)
+				if fnName != "" {
+					target = Link(fnName, "Lambda", fnName)
+				}
+			}
+			rows[i] = []string{awssdk.ToString(r.RouteKey), target}
 		}
 		return Table([]string{"Route Key", "Target"}, rows), nil
 	}
@@ -147,7 +168,19 @@ func (p *APIGatewayProvider) tabRoutes(ctx context.Context, item Item) (string, 
 	var rows [][]string
 	for _, res := range out.Items {
 		for method := range res.ResourceMethods {
-			rows = append(rows, []string{method, awssdk.ToString(res.Path), "(REST)"})
+			integration := "(REST)"
+			methodOut, err := p.v1.GetMethod(ctx, &apigwv1.GetMethodInput{
+				RestApiId:  awssdk.String(item.ID),
+				ResourceId: res.Id,
+				HttpMethod: awssdk.String(method),
+			})
+			if err == nil && methodOut.MethodIntegration != nil && methodOut.MethodIntegration.Uri != nil {
+				fnName := parseLambdaFromIntegrationURI(awssdk.ToString(methodOut.MethodIntegration.Uri))
+				if fnName != "" {
+					integration = Link(fnName, "Lambda", fnName)
+				}
+			}
+			rows = append(rows, []string{method, awssdk.ToString(res.Path), integration})
 		}
 	}
 	if len(rows) == 0 {

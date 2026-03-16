@@ -27,6 +27,7 @@ func main() {
 		awspkg.NewSQSProvider(cfg, *local),
 		awspkg.NewCloudFormationProvider(cfg, *local),
 		awspkg.NewIAMProvider(cfg, *local),
+		awspkg.NewIAMPoliciesProvider(cfg, *local),
 		awspkg.NewSecretsManagerProvider(cfg, *local),
 		awspkg.NewAPIGatewayProvider(cfg, *local),
 		awspkg.NewRoute53Provider(cfg, *local),

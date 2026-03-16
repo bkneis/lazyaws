@@ -20,16 +20,32 @@ func KV(pairs [][2]string) string {
 	return sb.String()
 }
 
+// displayLen returns the visible character count of s, excluding tview tag markup (e.g. [red], ["region"]).
+func displayLen(s string) int {
+	n := 0
+	for i := 0; i < len(s); {
+		if s[i] == '[' {
+			if j := strings.IndexByte(s[i+1:], ']'); j >= 0 {
+				i += j + 2
+				continue
+			}
+		}
+		n++
+		i++
+	}
+	return n
+}
+
 // Table renders a header row, a separator line, and data rows.
 func Table(headers []string, rows [][]string) string {
 	widths := make([]int, len(headers))
 	for i, h := range headers {
-		widths[i] = len(h)
+		widths[i] = displayLen(h)
 	}
 	for _, row := range rows {
 		for i, cell := range row {
-			if i < len(widths) && len(cell) > widths[i] {
-				widths[i] = len(cell)
+			if i < len(widths) && displayLen(cell) > widths[i] {
+				widths[i] = displayLen(cell)
 			}
 		}
 	}
@@ -67,4 +83,51 @@ func IsSensitiveKey(k string) bool {
 		}
 	}
 	return false
+}
+
+// Link returns a tview-formatted string for a clickable cross-resource link.
+// providerName must match the target provider's Name() return value exactly.
+// targetID must match the target Item's ID field exactly.
+// Styled with aqua underline (no bold) — distinct from the active tab style.
+func Link(label, providerName, targetID string) string {
+	region := "link:" + providerName + ":" + targetID
+	return `["` + region + `"][aqua::u]` + label + `[white::-]["]`
+}
+
+// arnLastSegment returns the resource name from an ARN.
+// Splits on ":" first, then on "/" to handle "role/MyRole" → "MyRole".
+func arnLastSegment(arn string) string {
+	parts := strings.Split(arn, ":")
+	seg := parts[len(parts)-1]
+	if idx := strings.LastIndex(seg, "/"); idx >= 0 {
+		return seg[idx+1:]
+	}
+	return seg
+}
+
+// arnToSQSURL converts an SQS ARN to its queue URL form.
+// arn:aws:sqs:{region}:{accountId}:{queueName} → https://sqs.{region}.amazonaws.com/{accountId}/{queueName}
+func arnToSQSURL(arn string) string {
+	parts := strings.Split(arn, ":")
+	if len(parts) != 6 {
+		return arn
+	}
+	return fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/%s", parts[3], parts[4], parts[5])
+}
+
+// parseLambdaFromIntegrationURI extracts the Lambda function name from an API Gateway integration URI.
+// Handles both direct Lambda ARN and proxy URI format
+// (arn:aws:apigateway:...:lambda:path/.../functions/{lambdaArn}/invocations).
+func parseLambdaFromIntegrationURI(uri string) string {
+	// Proxy format: contains "functions/" and "/invocations"
+	if idx := strings.Index(uri, "functions/"); idx >= 0 {
+		rest := uri[idx+len("functions/"):]
+		if end := strings.Index(rest, "/invocations"); end >= 0 {
+			rest = rest[:end]
+		}
+		// rest is the Lambda ARN — return last segment
+		return arnLastSegment(rest)
+	}
+	// Direct Lambda ARN
+	return arnLastSegment(uri)
 }

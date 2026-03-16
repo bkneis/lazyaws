@@ -49,6 +49,10 @@ func (s *stubAPIGatewayV2) GetStages(_ context.Context, _ *apigwv2.GetStagesInpu
 	return &apigwv2.GetStagesOutput{Items: s.stages}, nil
 }
 
+func (s *stubAPIGatewayV2) GetIntegration(_ context.Context, _ *apigwv2.GetIntegrationInput, _ ...func(*apigwv2.Options)) (*apigwv2.GetIntegrationOutput, error) {
+	return &apigwv2.GetIntegrationOutput{}, nil
+}
+
 // stubAPIGatewayV1 implements awspkg.APIGatewayV1API.
 type stubAPIGatewayV1 struct {
 	apis      []apigwv1types.RestApi
@@ -80,6 +84,10 @@ func (s *stubAPIGatewayV1) GetResources(_ context.Context, _ *apigwv1.GetResourc
 
 func (s *stubAPIGatewayV1) GetStages(_ context.Context, _ *apigwv1.GetStagesInput, _ ...func(*apigwv1.Options)) (*apigwv1.GetStagesOutput, error) {
 	return &apigwv1.GetStagesOutput{Item: s.stages}, nil
+}
+
+func (s *stubAPIGatewayV1) GetMethod(_ context.Context, _ *apigwv1.GetMethodInput, _ ...func(*apigwv1.Options)) (*apigwv1.GetMethodOutput, error) {
+	return &apigwv1.GetMethodOutput{}, nil
 }
 
 func newTestAPIGatewayProvider() *awspkg.APIGatewayProvider {
