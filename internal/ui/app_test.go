@@ -16,26 +16,22 @@ func TestRenderTabBar(t *testing.T) {
 	}
 	cases := []struct {
 		active      int
-		wantActive  string // substring expected in line1
-		wantInLine2 string // distinctive underline substring expected in line2
+		wantActive  string // bracket-style active tab substring
 		wantOffsets []int
 	}{
 		{
 			active:      0,
-			wantActive:  "[aqua::bu] Overview [-::-]",
-			wantInLine2: "──────────",
+			wantActive:  "[aqua][ Overview ][-]",
 			wantOffsets: []int{0, 10, 19},
 		},
 		{
 			active:      1,
-			wantActive:  "[aqua::bu] Objects [-::-]",
-			wantInLine2: "─────────",
+			wantActive:  "[aqua][ Objects ][-]",
 			wantOffsets: []int{0, 10, 19},
 		},
 		{
 			active:      2,
-			wantActive:  "[aqua::bu] Policy [-::-]",
-			wantInLine2: "────────",
+			wantActive:  "[aqua][ Policy ][-]",
 			wantOffsets: []int{0, 10, 19},
 		},
 	}
@@ -46,9 +42,6 @@ func TestRenderTabBar(t *testing.T) {
 			got := a.panels.tabBar.GetText(false)
 			if !strings.Contains(got, tc.wantActive) {
 				t.Errorf("active=%d: got %q, want to contain %q", tc.active, got, tc.wantActive)
-			}
-			if !strings.Contains(got, tc.wantInLine2) {
-				t.Errorf("active=%d: got %q, want underline %q", tc.active, got, tc.wantInLine2)
 			}
 			if len(a.tabBarOffsets) != len(tc.wantOffsets) {
 				t.Fatalf("active=%d: got %d offsets, want %d", tc.active, len(a.tabBarOffsets), len(tc.wantOffsets))

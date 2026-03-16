@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,22 @@ type S3API interface {
 	GetObject(ctx context.Context, in *s3.GetObjectInput, opts ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 }
 
+// TextSizeLimit is the maximum file size for inline Content tab display (10 MB).
+const TextSizeLimit = 10 * 1024 * 1024
+
+var textExts = map[string]bool{
+	".json": true, ".txt": true, ".yaml": true, ".yml": true,
+	".log": true, ".csv": true, ".xml": true, ".md": true,
+	".toml": true, ".ini": true, ".sh": true, ".env": true,
+	".conf": true, ".properties": true, ".css": true, ".html": true,
+	".js": true, ".ts": true, ".go": true, ".py": true,
+}
+
+// IsTextFile reports whether key has a text file extension.
+func IsTextFile(key string) bool {
+	return textExts[strings.ToLower(filepath.Ext(key))]
+}
+
 // S3ObjectItem holds pre-formatted display data for interactive object row selection.
 type S3ObjectItem struct {
 	Key           string
@@ -36,9 +53,11 @@ type S3ObjectItem struct {
 
 // S3Provider implements Provider for Amazon S3.
 type S3Provider struct {
-	client      S3API
-	objectsMu   sync.RWMutex
-	lastObjects []S3ObjectItem
+	client       S3API
+	objectsMu    sync.RWMutex
+	lastObjects  []S3ObjectItem
+	selectedKey  string
+	selectedSize int64
 }
 
 func NewS3Provider(cfg awssdk.Config, local bool) *S3Provider {
@@ -73,11 +92,20 @@ func (p *S3Provider) GetDetail(ctx context.Context, item Item) (string, error) {
 	return p.tabOverview(ctx, item)
 }
 
+// SetSelectedObject records the currently selected S3 object for the Content tab.
+func (p *S3Provider) SetSelectedObject(key string, size int64) {
+	p.objectsMu.Lock()
+	p.selectedKey = key
+	p.selectedSize = size
+	p.objectsMu.Unlock()
+}
+
 func (p *S3Provider) Tabs() []TabDef {
 	return []TabDef{
 		{Label: "Overview", Fetch: p.tabOverview},
 		{Label: "Objects", Fetch: p.tabObjects},
 		{Label: "Policy", Fetch: p.tabPolicy},
+		{Label: "Content", Fetch: p.tabContent},
 	}
 }
 
@@ -201,6 +229,28 @@ func (p *S3Provider) tabPolicy(ctx context.Context, item Item) (string, error) {
 	}
 	b, _ := json.MarshalIndent(raw, "  ", "  ")
 	return "  " + string(b) + "\n", nil
+}
+
+func (p *S3Provider) tabContent(ctx context.Context, item Item) (string, error) {
+	p.objectsMu.RLock()
+	key, size := p.selectedKey, p.selectedSize
+	p.objectsMu.RUnlock()
+
+	if key == "" {
+		return "  (no object selected — use Objects tab to select one)\n", nil
+	}
+	if !IsTextFile(key) {
+		return fmt.Sprintf("  (binary file: %s)\n", key), nil
+	}
+	if size > TextSizeLimit {
+		return fmt.Sprintf("  (file too large: %s — %s > 10 MB)\n", key, FormatSize(size)), nil
+	}
+
+	var buf strings.Builder
+	if err := p.DownloadObject(ctx, item.ID, key, &buf); err != nil {
+		return "", fmt.Errorf("download %s: %w", key, err)
+	}
+	return "  [cyan]" + key + "[-]\n\n" + buf.String(), nil
 }
 
 func FormatSize(bytes int64) string {

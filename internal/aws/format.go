@@ -20,10 +20,17 @@ func KV(pairs [][2]string) string {
 	return sb.String()
 }
 
-// displayLen returns the visible character count of s, excluding tview tag markup (e.g. [red], ["region"]).
+// displayLen returns the visible character count of s, excluding tview tag markup
+// (e.g. [red], ["region"]) and \x02...\x03 link markers.
 func displayLen(s string) int {
 	n := 0
 	for i := 0; i < len(s); {
+		if s[i] == '\x02' {
+			if j := strings.IndexByte(s[i+1:], '\x03'); j >= 0 {
+				i += j + 2
+				continue
+			}
+		}
 		if s[i] == '[' {
 			if j := strings.IndexByte(s[i+1:], ']'); j >= 0 {
 				i += j + 2
@@ -85,13 +92,10 @@ func IsSensitiveKey(k string) bool {
 	return false
 }
 
-// Link returns a tview-formatted string for a clickable cross-resource link.
-// providerName must match the target provider's Name() return value exactly.
-// targetID must match the target Item's ID field exactly.
-// Styled with aqua underline (no bold) — distinct from the active tab style.
+// Link returns a styled cross-resource link. Navigation metadata is embedded
+// as \x02provider:targetID\x03 (stripped before display, parsed for navigation).
 func Link(label, providerName, targetID string) string {
-	region := "link:" + providerName + ":" + targetID
-	return `["` + region + `"][aqua::u]` + label + `[white::-]["]`
+	return "\x02" + providerName + ":" + targetID + "\x03" + "[aqua::u]" + label + "[-::-]"
 }
 
 // arnLastSegment returns the resource name from an ARN.

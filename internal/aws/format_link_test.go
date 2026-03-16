@@ -8,8 +8,8 @@ import (
 func TestLink(t *testing.T) {
 	got := Link("my-function", "Lambda", "my-function")
 	for _, want := range []string{
-		`["link:Lambda:my-function"]`, // region tag encodes provider + targetID
-		"[aqua::u]my-function",        // label styled aqua underline
+		"\x02Lambda:my-function\x03", // control-char marker encodes provider + targetID
+		"[aqua::u]my-function",       // label styled aqua underline
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Link() = %q, want to contain %q", got, want)

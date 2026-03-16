@@ -5,13 +5,29 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"regexp"
 	"strings"
 
 	awspkg "github.com/bryanl/lazyaws/internal/aws"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
+
+type linkRef struct{ provider, targetID string }
+
+var linkMarkerRe = regexp.MustCompile("\x02([^\x03]+)\x03")
+
+// parseLinkContent strips \x02...\x03 markers from content, returning
+// cleaned displayable text and the ordered list of extracted links.
+func parseLinkContent(content string) (string, []linkRef) {
+	var links []linkRef
+	for _, m := range linkMarkerRe.FindAllStringSubmatch(content, -1) {
+		if parts := strings.SplitN(m[1], ":", 2); len(parts) == 2 {
+			links = append(links, linkRef{provider: parts[0], targetID: parts[1]})
+		}
+	}
+	return linkMarkerRe.ReplaceAllString(content, ""), links
+}
 
 // navState records the TUI position before following a cross-resource link.
 type navState struct {
@@ -32,8 +48,9 @@ type App struct {
 	tabCache          []string
 	currentItem       awspkg.Item
 	preFocusIdx       int
-	tabBarOffsets     []int // display-column start per tab (for mouse click)
-	expandVisible     bool  // whether expand panel is shown
+	tabBarOffsets     []int       // display-column start per tab (for mouse click)
+	tabLinks          [][]linkRef // per-tab extracted links, parallel to tabCache
+	expandVisible     bool        // whether expand panel is shown
 	navStack          []navState
 	selectedObjectRow int
 	cachedObjects     []awspkg.S3ObjectItem
@@ -125,20 +142,14 @@ func (a *App) build() {
 		return action, event
 	})
 
-	// Wire content TextView for link clicks and Enter to follow links
-	a.panels.detail.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
-		if action == tview.MouseLeftClick {
-			a.followHighlightedLink()
-		}
-		return action, event
-	})
+	// Wire Enter on detail to follow the first link or open an S3 object.
 	a.panels.detail.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEnter {
 			if a.isS3ObjectsTabFocused() {
 				a.openObject()
 				return nil
 			}
-			if a.followHighlightedLink() {
+			if a.followFirstLink() {
 				return nil
 			}
 		}
@@ -262,6 +273,7 @@ func (a *App) selectItem(providerIdx int, item awspkg.Item) {
 	tabs := a.providers[providerIdx].Tabs()
 	a.tabLoaded = make([]bool, len(tabs))
 	a.tabCache = make([]string, len(tabs))
+	a.tabLinks = make([][]linkRef, len(tabs))
 	a.loadTab(providerIdx, 0, item)
 }
 
@@ -281,14 +293,20 @@ func (a *App) loadTab(providerIdx, tabIdx int, item awspkg.Item) {
 			}
 			if err != nil {
 				a.tabCache[tabIdx] = fmt.Sprintf("[red]Error: %v[-]", err)
+				a.tabLinks[tabIdx] = nil
 			} else {
-				a.tabCache[tabIdx] = content
+				cleaned, links := parseLinkContent(content)
+				a.tabCache[tabIdx] = cleaned
+				a.tabLinks[tabIdx] = links
 			}
 			a.tabLoaded[tabIdx] = true
 			// Cache S3 objects for row selection when the Objects tab finishes loading.
 			if s3p, ok := a.providers[providerIdx].(*awspkg.S3Provider); ok {
 				if tabIdx < len(tabs) && tabs[tabIdx].Label == "Objects" {
 					a.cachedObjects = s3p.GetLastObjects()
+					if len(a.cachedObjects) > 0 {
+						s3p.SetSelectedObject(a.cachedObjects[0].Key, a.cachedObjects[0].Size)
+					}
 				}
 			}
 			if a.activeTab == tabIdx {
@@ -392,28 +410,36 @@ func (a *App) moveObjectRow(delta int) {
 		return
 	}
 	a.selectedObjectRow = (a.selectedObjectRow + delta + n) % n
+	if s3p, ok := a.providers[a.activeProvider].(*awspkg.S3Provider); ok {
+		obj := a.cachedObjects[a.selectedObjectRow]
+		s3p.SetSelectedObject(obj.Key, obj.Size)
+		// Invalidate Content tab so it re-fetches with the new selection.
+		for i, t := range a.providers[a.activeProvider].Tabs() {
+			if t.Label == "Content" && i < len(a.tabLoaded) {
+				a.tabLoaded[i] = false
+			}
+		}
+	}
 	a.renderDetail()
 }
 
-// renderTabBar writes the 2-row tab bar to the tabBar widget and records
+// renderTabBar writes a single-row tab bar to the tabBar widget and records
 // display-column offsets for mouse click detection.
 func (a *App) renderTabBar(tabs []awspkg.TabDef) {
-	var line1, line2 strings.Builder
+	var line strings.Builder
 	a.tabBarOffsets = make([]int, len(tabs))
 	col := 0
 	for i, tab := range tabs {
 		label := " " + tab.Label + " "
 		a.tabBarOffsets[i] = col
 		if i == a.activeTab {
-			line1.WriteString("[aqua::bu]" + label + "[-::-]")
-			line2.WriteString(strings.Repeat("─", len(label)))
+			line.WriteString("[aqua][ " + tab.Label + " ][-]")
 		} else {
-			line1.WriteString("[gray]" + label + "[-]")
-			line2.WriteString(strings.Repeat(" ", len(label)))
+			line.WriteString("[gray]" + label + "[-]")
 		}
-		col += len(label) // display columns (no tag chars)
+		col += len(label)
 	}
-	a.panels.tabBar.SetText(line1.String() + "\n" + line2.String())
+	a.panels.tabBar.SetText(line.String())
 }
 
 // selectTab switches to the given tab index, fetching if not yet loaded.
@@ -586,26 +612,13 @@ func (a *App) navigateBack() bool {
 	return true
 }
 
-// followHighlightedLink reads the currently highlighted region from the detail
-// TextView and navigates to it if it is a link region.
-func (a *App) followHighlightedLink() bool {
-	highlights := a.panels.detail.GetHighlights()
-	if len(highlights) == 0 {
+// followFirstLink navigates to the first cross-resource link in the active tab.
+func (a *App) followFirstLink() bool {
+	if a.activeTab >= len(a.tabLinks) || len(a.tabLinks[a.activeTab]) == 0 {
 		return false
 	}
-	region := highlights[0]
-	if !strings.HasPrefix(region, "link:") {
-		return false
-	}
-	// region format: "link:{providerName}:{targetID}"
-	rest := strings.TrimPrefix(region, "link:")
-	sep := strings.Index(rest, ":")
-	if sep < 0 {
-		return false
-	}
-	providerName := rest[:sep]
-	targetID := rest[sep+1:]
-	a.navigateTo(providerName, targetID)
+	link := a.tabLinks[a.activeTab][0]
+	a.navigateTo(link.provider, link.targetID)
 	return true
 }
 
@@ -629,22 +642,7 @@ func (a *App) dismissPrompt() {
 	}
 }
 
-var textExtensions = map[string]bool{
-	".json": true, ".txt": true, ".yaml": true, ".yml": true,
-	".log": true, ".csv": true, ".xml": true, ".md": true,
-	".toml": true, ".ini": true, ".sh": true, ".env": true,
-	".conf": true, ".properties": true,
-}
-
-func isTextFile(key string) bool {
-	ext := strings.ToLower(filepath.Ext(key))
-	return textExtensions[ext]
-}
-
-const (
-	textSizeThreshold = 10 * 1024 * 1024  // 10 MB — text files below this open silently
-	warnSizeThreshold = 100 * 1024 * 1024 // 100 MB — all files above this get a size warning
-)
+const warnSizeThreshold = 100 * 1024 * 1024 // 100 MB — all files above this get a size warning
 
 // downloadAndShow streams the S3 object to a temp file and shows the content in the expand panel.
 func (a *App) downloadAndShow(bucket, key string) {
@@ -728,7 +726,7 @@ func (a *App) openObject() {
 	}
 	obj := a.cachedObjects[a.selectedObjectRow]
 	bucket := a.currentItem.ID
-	isText := isTextFile(obj.Key)
+	isText := awspkg.IsTextFile(obj.Key)
 
 	doOpen := func() {
 		if isText {
@@ -739,7 +737,7 @@ func (a *App) openObject() {
 	}
 
 	switch {
-	case isText && obj.Size < textSizeThreshold:
+	case isText && obj.Size < awspkg.TextSizeLimit:
 		doOpen() // silent open for small text files
 	case obj.Size >= warnSizeThreshold:
 		msg := fmt.Sprintf("File is %s. Download anyway? [y/n]", awspkg.FormatSize(obj.Size))

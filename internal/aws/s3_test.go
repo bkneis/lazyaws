@@ -137,8 +137,8 @@ func TestS3Provider_Tabs(t *testing.T) {
 	p := awspkg.NewS3ProviderWithClient(stub)
 	tabs := p.Tabs()
 
-	if len(tabs) != 3 {
-		t.Fatalf("got %d tabs, want 3", len(tabs))
+	if len(tabs) != 4 {
+		t.Fatalf("got %d tabs, want 4", len(tabs))
 	}
 
 	item := awspkg.Item{ID: "my-bucket", Name: "my-bucket"}
@@ -151,6 +151,7 @@ func TestS3Provider_Tabs(t *testing.T) {
 		{0, "Overview", "us-east-1"},
 		{1, "Objects", "images/hero.png"},
 		{2, "Policy", "2012-10-17"},
+		{3, "Content", "(no object selected"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {
@@ -248,5 +249,36 @@ func TestS3Provider_DownloadObject(t *testing.T) {
 	}
 	if buf.String() != "hello world" {
 		t.Errorf("want 'hello world', got %q", buf.String())
+	}
+}
+
+func TestS3Provider_ContentTab(t *testing.T) {
+	stub := &stubS3{}
+	p := awspkg.NewS3ProviderWithClient(stub)
+	item := awspkg.Item{ID: "my-bucket", Name: "my-bucket"}
+	contentFetch := p.Tabs()[3].Fetch
+
+	cases := []struct {
+		name string
+		key  string
+		size int64
+		want string
+	}{
+		{"no selection", "", 0, "(no object selected"},
+		{"binary file", "image.png", 1000, "(binary file"},
+		{"text file", "readme.txt", 100, "hello world"},
+		{"too large", "big.txt", 11 * 1024 * 1024, "(file too large"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p.SetSelectedObject(tc.key, tc.size)
+			content, err := contentFetch(context.Background(), item)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(content, tc.want) {
+				t.Errorf("content missing %q\ngot: %s", tc.want, content)
+			}
+		})
 	}
 }

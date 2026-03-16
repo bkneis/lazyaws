@@ -13,7 +13,7 @@ const hintsText = " [cyan]Tab[-]/[cyan]S-Tab[-]: panel   [cyan]j/k[-]: navigate 
 type panels struct {
 	resources   *tview.List
 	items       *tview.List
-	tabBar      *tview.TextView  // 2-row tab header (label row + underline row)
+	tabBar      *tview.TextView  // single-row tab header
 	detail      *tview.TextView  // scrollable content area
 	expand      *tview.TextView  // expansion panel (hidden by default)
 	rightFlex   *tview.Flex      // vertical flex containing tabBar+detail+expand
@@ -38,14 +38,12 @@ func newPanels() *panels {
 		SetBlurFunc(func() { items.SetBorderColor(tcell.ColorDefault) })
 
 	tabBar := tview.NewTextView().
-		SetDynamicColors(true).
-		SetRegions(true)
+		SetDynamicColors(true)
 
 	detail := tview.NewTextView().
 		SetDynamicColors(true).
 		SetScrollable(true).
-		SetWrap(false).
-		SetRegions(true)
+		SetWrap(false)
 	detail.SetBorder(true).SetTitle(" Detail ")
 	detail.SetFocusFunc(func() { detail.SetBorderColor(focusColor) }).
 		SetBlurFunc(func() { detail.SetBorderColor(tcell.ColorDefault) })
@@ -57,7 +55,7 @@ func newPanels() *panels {
 	expand.SetBorder(true).SetTitle(" Expand ")
 
 	rightFlex := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(tabBar, 2, 0, false).
+		AddItem(tabBar, 1, 0, false).
 		AddItem(detail, 0, 2, false).
 		AddItem(expand, 0, 0, false) // proportion 0 = hidden
 
