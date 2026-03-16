@@ -57,17 +57,43 @@ func setupKeys(a *App) {
 			a.refresh()
 			return nil
 		case 'j':
+			if a.isCWStreamsTabFocused() {
+				a.moveCWStreamRow(1)
+				return nil
+			}
+			if a.isDynamoItemsTabFocused() {
+				a.moveDynamoItemRow(1)
+				return nil
+			}
 			if a.isS3ObjectsTabFocused() {
 				a.moveObjectRow(1)
 				return nil
 			}
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
 		case 'k':
+			if a.isCWStreamsTabFocused() {
+				a.moveCWStreamRow(-1)
+				return nil
+			}
+			if a.isDynamoItemsTabFocused() {
+				a.moveDynamoItemRow(-1)
+				return nil
+			}
 			if a.isS3ObjectsTabFocused() {
 				a.moveObjectRow(-1)
 				return nil
 			}
 			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		case 'n':
+			if a.isDynamoItemsTabFocused() {
+				a.advanceDynamoPage(true)
+				return nil
+			}
+		case 'p':
+			if a.isDynamoItemsTabFocused() {
+				a.advanceDynamoPage(false)
+				return nil
+			}
 		case ']':
 			a.nextTab()
 			return nil

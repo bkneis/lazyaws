@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	awspkg "github.com/bryanl/lazyaws/internal/aws"
 	"github.com/gdamore/tcell/v2"
@@ -51,13 +52,28 @@ type App struct {
 	preFocusIdx       int
 	tabBarOffsets     []int       // display-column start per tab (for mouse click)
 	tabLinks          [][]linkRef // per-tab extracted links, parallel to tabCache
-	expandVisible     bool        // whether expand panel is shown
-	navStack          []navState
-	selectedObjectRow int
-	cachedObjects     []awspkg.S3ObjectItem
-	tmpFiles          []string // temp files to clean up on exit
-	promptYesHandler  func()
-	promptNoHandler   func()
+	expandVisible      bool        // whether expand panel is shown
+	navStack           []navState
+	selectedObjectRow  int
+	cachedObjects      []awspkg.S3ObjectItem
+	selectedDynamoRow  int
+	cachedDynamoRows   []awspkg.DynamoDBItemRow
+	dynamoHeaders      []string
+	tmpFiles           []string // temp files to clean up on exit
+	promptYesHandler   func()
+	promptNoHandler    func()
+	// CW Logs live tail state
+	cachedCWLogStreams  []awspkg.CWLogStreamRow
+	selectedCWStreamRow int
+	cwTailEvents        []cwTailEvent
+	cwTailCancel        context.CancelFunc
+}
+
+type cwTailEvent struct {
+	ts     time.Time
+	group  string
+	stream string
+	msg    string
 }
 
 // NewApp constructs the App with the given resource providers and color theme.
@@ -144,35 +160,67 @@ func (a *App) build() {
 		return action, event
 	})
 
-	// Wire mouse click on detail to select S3 object rows.
+	// Wire mouse click on detail to select S3 object rows or DynamoDB item rows.
 	a.panels.detail.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
 		if action == tview.MouseLeftClick {
-			_, ok := a.providers[a.activeProvider].(*awspkg.S3Provider)
 			tabs := a.providers[a.activeProvider].Tabs()
-			isObjectsTab := ok && a.activeTab < len(tabs) && tabs[a.activeTab].Label == "Objects" && len(a.cachedObjects) > 0
-			if isObjectsTab {
-				_, screenY := event.Position()
-				_, widgetY, _, _ := a.panels.detail.GetRect()
-				scrollRow, _ := a.panels.detail.GetScrollOffset()
-				contentRow := (screenY - widgetY - 1) + scrollRow // -1 for border
-				objIdx := contentRow - 2                          // skip header + separator rows
-				if objIdx >= 0 && objIdx < len(a.cachedObjects) {
-					a.selectedObjectRow = objIdx
-					a.moveObjectRow(0)
-					a.panels.focused = 2
-					a.tapp.SetFocus(a.panels.detail)
+			_, screenY := event.Position()
+			_, widgetY, _, _ := a.panels.detail.GetRect()
+			scrollRow, _ := a.panels.detail.GetScrollOffset()
+			contentRow := (screenY - widgetY - 1) + scrollRow // -1 for border
+
+			if _, ok := a.providers[a.activeProvider].(*awspkg.S3Provider); ok {
+				if a.activeTab < len(tabs) && tabs[a.activeTab].Label == "Objects" && len(a.cachedObjects) > 0 {
+					objIdx := contentRow - 2 // skip header + separator rows
+					if objIdx >= 0 && objIdx < len(a.cachedObjects) {
+						a.selectedObjectRow = objIdx
+						a.moveObjectRow(0)
+						a.panels.focused = 2
+						a.tapp.SetFocus(a.panels.detail)
+					}
+					return action, nil
 				}
-				return action, nil
+			}
+
+			if _, ok := a.providers[a.activeProvider].(*awspkg.DynamoDBProvider); ok {
+				if a.activeTab < len(tabs) && tabs[a.activeTab].Label == "Items" && len(a.cachedDynamoRows) > 0 {
+					// 3 = page header line + blank line + table header; 4 = + separator line
+					rowIdx := contentRow - 4
+					if rowIdx >= 0 && rowIdx < len(a.cachedDynamoRows) {
+						a.selectedDynamoRow = rowIdx
+						a.moveDynamoItemRow(0)
+						a.panels.focused = 2
+						a.tapp.SetFocus(a.panels.detail)
+					}
+					return action, nil
+				}
+			}
+
+			if _, ok := a.providers[a.activeProvider].(*awspkg.CloudWatchLogsProvider); ok {
+				if a.activeTab < len(tabs) && tabs[a.activeTab].Label == "Streams" && len(a.cachedCWLogStreams) > 0 {
+					rowIdx := contentRow - 2 // skip header + separator rows
+					if rowIdx >= 0 && rowIdx < len(a.cachedCWLogStreams) {
+						a.selectedCWStreamRow = rowIdx
+						a.moveCWStreamRow(0)
+						a.panels.focused = 2
+						a.tapp.SetFocus(a.panels.detail)
+					}
+					return action, nil
+				}
 			}
 		}
 		return action, event
 	})
 
-	// Wire Enter on detail to follow the first link or open an S3 object.
+	// Wire Enter on detail to follow the first link, open an S3 object, or expand a DynamoDB item.
 	a.panels.detail.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEnter {
 			if a.isS3ObjectsTabFocused() {
 				a.openObject()
+				return nil
+			}
+			if a.isDynamoItemsTabFocused() {
+				a.showDynamoItemExpand()
 				return nil
 			}
 			if a.followFirstLink() {
@@ -222,6 +270,9 @@ func (a *App) build() {
 // Pass query="" to load all items with no filter.
 func (a *App) loadItems(i int, query string) {
 	a.dismissPrompt()
+	a.stopCWTailStream()
+	a.cachedCWLogStreams = nil
+	a.selectedCWStreamRow = 0
 	a.tabLoaded = nil
 	a.tabCache = nil
 	a.loadedItems = nil
@@ -229,6 +280,9 @@ func (a *App) loadItems(i int, query string) {
 	a.currentItem = awspkg.Item{}
 	a.selectedObjectRow = 0
 	a.cachedObjects = nil
+	a.selectedDynamoRow = 0
+	a.cachedDynamoRows = nil
+	a.dynamoHeaders = nil
 	a.panels.items.Clear()
 	a.panels.detail.SetText("Loading...")
 
@@ -298,10 +352,17 @@ func (a *App) restoreFocus() {
 // selectItem resets tab state and loads the first tab for the selected item.
 func (a *App) selectItem(providerIdx int, item awspkg.Item) {
 	a.dismissPrompt()
+	a.collapseExpand()
+	a.stopCWTailStream()
+	a.cachedCWLogStreams = nil
+	a.selectedCWStreamRow = 0
 	a.currentItem = item
 	a.activeTab = 0
 	a.selectedObjectRow = 0
 	a.cachedObjects = nil
+	a.selectedDynamoRow = 0
+	a.cachedDynamoRows = nil
+	a.dynamoHeaders = nil
 	tabs := a.providers[providerIdx].Tabs()
 	a.tabLoaded = make([]bool, len(tabs))
 	a.tabCache = make([]string, len(tabs))
@@ -341,6 +402,20 @@ func (a *App) loadTab(providerIdx, tabIdx int, item awspkg.Item) {
 					}
 				}
 			}
+			// Cache DynamoDB items for row selection when the Items tab finishes loading.
+			if dbp, ok := a.providers[providerIdx].(*awspkg.DynamoDBProvider); ok {
+				if tabIdx < len(tabs) && tabs[tabIdx].Label == "Items" {
+					a.cachedDynamoRows, a.dynamoHeaders = dbp.GetCurrentItems()
+					a.selectedDynamoRow = 0
+				}
+			}
+			// Cache CW Logs streams for row selection when the Streams tab finishes loading.
+			if cwlp, ok := a.providers[providerIdx].(*awspkg.CloudWatchLogsProvider); ok {
+				if tabIdx < len(tabs) && tabs[tabIdx].Label == "Streams" {
+					a.cachedCWLogStreams = cwlp.GetLastStreams()
+					a.selectedCWStreamRow = 0
+				}
+			}
 			if a.activeTab == tabIdx {
 				a.renderDetail()
 			}
@@ -355,11 +430,23 @@ func (a *App) renderDetail() {
 		return
 	}
 	a.renderTabBar(tabs)
+
+	// CW Logs Tail tab — rendered independently of tab load state.
+	if a.isCWLogsTailActive() {
+		a.panels.detail.SetText(a.renderCWLogTail()).ScrollToEnd()
+		return
+	}
+
 	content := "  ... fetching"
 	if a.activeTab < len(a.tabLoaded) && a.tabLoaded[a.activeTab] {
-		if len(a.cachedObjects) > 0 && tabs[a.activeTab].Label == "Objects" {
+		switch {
+		case len(a.cachedObjects) > 0 && tabs[a.activeTab].Label == "Objects":
 			content = a.renderObjectsWithHighlight()
-		} else {
+		case len(a.cachedDynamoRows) > 0 && tabs[a.activeTab].Label == "Items":
+			content = a.renderDynamoItemsWithHighlight()
+		case len(a.cachedCWLogStreams) > 0 && tabs[a.activeTab].Label == "Streams":
+			content = a.renderCWStreamsWithHighlight()
+		default:
 			content = a.tabCache[a.activeTab]
 		}
 	}
@@ -435,6 +522,145 @@ func (a *App) isS3ObjectsTabFocused() bool {
 	return len(a.cachedObjects) > 0
 }
 
+// isDynamoItemsTabFocused returns true when focus is on the detail pane,
+// the active provider is DynamoDB, the active tab is Items, and items are cached.
+func (a *App) isDynamoItemsTabFocused() bool {
+	if a.tapp.GetFocus() != a.panels.detail {
+		return false
+	}
+	if _, ok := a.providers[a.activeProvider].(*awspkg.DynamoDBProvider); !ok {
+		return false
+	}
+	tabs := a.providers[a.activeProvider].Tabs()
+	if a.activeTab >= len(tabs) || tabs[a.activeTab].Label != "Items" {
+		return false
+	}
+	return len(a.cachedDynamoRows) > 0
+}
+
+// renderDynamoItemsWithHighlight rebuilds the Items tab table with the selected row highlighted.
+func (a *App) renderDynamoItemsWithHighlight() string {
+	if len(a.cachedDynamoRows) == 0 {
+		return a.tabCache[a.activeTab]
+	}
+
+	// Compute column widths.
+	widths := make([]int, len(a.dynamoHeaders))
+	for i, h := range a.dynamoHeaders {
+		widths[i] = len(h)
+	}
+	for _, row := range a.cachedDynamoRows {
+		for i, cell := range row.Cells {
+			if i < len(widths) && len(cell) > widths[i] {
+				widths[i] = len(cell)
+			}
+		}
+	}
+
+	padded := make([]string, len(a.dynamoHeaders))
+	for i, h := range a.dynamoHeaders {
+		padded[i] = fmt.Sprintf("%-*s", widths[i]+2, h)
+	}
+
+	var sb strings.Builder
+	dbp := a.providers[a.activeProvider].(*awspkg.DynamoDBProvider)
+	fmt.Fprintf(&sb, "  Items  (page %d, %d items)\n\n", dbp.ScanPage(), len(a.cachedDynamoRows))
+	fmt.Fprintf(&sb, "  %s%s[-]\n  ", a.theme.HeaderTag, strings.Join(padded, ""))
+	for _, w := range widths {
+		sb.WriteString(strings.Repeat("─", w) + "  ")
+	}
+	sb.WriteString("\n")
+
+	for i, row := range a.cachedDynamoRows {
+		if i == a.selectedDynamoRow {
+			sb.WriteString("  " + a.theme.HighlightTag)
+		} else {
+			sb.WriteString("  ")
+		}
+		for j, cell := range row.Cells {
+			if j < len(widths) {
+				fmt.Fprintf(&sb, "%-*s", widths[j]+2, cell)
+			}
+		}
+		if i == a.selectedDynamoRow {
+			sb.WriteString("[-]")
+		}
+		sb.WriteString("\n")
+	}
+
+	prevHint := "p: prev page"
+	if !dbp.HasPrevPage() {
+		prevHint = "[::d]p: prev page[::-]"
+	}
+	nextHint := "n: next page"
+	if !dbp.HasNextPage() {
+		nextHint = "[::d]n: next page[::-]"
+	}
+	fmt.Fprintf(&sb, "\n  [%s]  [%s]  [Enter: expand item]\n", prevHint, nextHint)
+	return sb.String()
+}
+
+// moveDynamoItemRow adjusts selectedDynamoRow by delta (clamped, no wrap) and re-renders.
+func (a *App) moveDynamoItemRow(delta int) {
+	n := len(a.cachedDynamoRows)
+	if n == 0 {
+		return
+	}
+	a.selectedDynamoRow += delta
+	if a.selectedDynamoRow < 0 {
+		a.selectedDynamoRow = 0
+	}
+	if a.selectedDynamoRow >= n {
+		a.selectedDynamoRow = n - 1
+	}
+	a.renderDetail()
+}
+
+// advanceDynamoPage loads the next or previous scan page asynchronously.
+func (a *App) advanceDynamoPage(forward bool) {
+	dbp, ok := a.providers[a.activeProvider].(*awspkg.DynamoDBProvider)
+	if !ok {
+		return
+	}
+	if forward && !dbp.HasNextPage() {
+		return
+	}
+	if !forward && !dbp.HasPrevPage() {
+		return
+	}
+	tableName := a.currentItem.ID
+	a.showStatusMessage("[yellow]Loading…[-]")
+	go func() {
+		var rows []awspkg.DynamoDBItemRow
+		var headers []string
+		var err error
+		if forward {
+			rows, headers, err = dbp.NextPage(context.Background(), tableName)
+		} else {
+			rows, headers, err = dbp.PrevPage(context.Background(), tableName)
+		}
+		a.tapp.QueueUpdateDraw(func() {
+			if err != nil {
+				a.showStatusMessage(fmt.Sprintf("[red]Page error: %v[-]", err))
+				return
+			}
+			a.cachedDynamoRows = rows
+			a.dynamoHeaders = headers
+			a.selectedDynamoRow = 0
+			a.resetHints()
+			a.renderDetail()
+		})
+	}()
+}
+
+// showDynamoItemExpand shows the full JSON of the selected DynamoDB item in the expand panel.
+func (a *App) showDynamoItemExpand() {
+	if len(a.cachedDynamoRows) == 0 || a.selectedDynamoRow >= len(a.cachedDynamoRows) {
+		return
+	}
+	a.showExpand(a.cachedDynamoRows[a.selectedDynamoRow].FullJSON)
+}
+
 // moveObjectRow adjusts selectedObjectRow by delta (wraps) and re-renders.
 func (a *App) moveObjectRow(delta int) {
 	n := len(a.cachedObjects)
@@ -481,12 +707,27 @@ func (a *App) selectTab(idx int) {
 	if idx < 0 || idx >= len(tabs) || len(a.tabLoaded) == 0 {
 		return
 	}
+	a.collapseExpand()
+
+	// Stop tail stream when leaving the Tail tab.
+	if a.isCWLogsTailActive() {
+		a.stopCWTailStream()
+	}
+
 	a.activeTab = idx
 	if !a.tabLoaded[idx] {
 		a.loadTab(a.activeProvider, idx, a.currentItem)
 	} else {
 		a.renderDetail()
 	}
+
+	// Start live tail stream when entering the Tail tab.
+	if _, ok := a.providers[a.activeProvider].(*awspkg.CloudWatchLogsProvider); ok {
+		if tabs[idx].Label == "Tail" {
+			a.startCWTailStream()
+		}
+	}
+
 	a.panels.focused = 2
 	a.tapp.SetFocus(a.panels.detail)
 }
@@ -534,6 +775,16 @@ func (a *App) showExpand(content string) {
 	a.panels.rightFlex.ResizeItem(a.panels.expand, 0, 1)
 	a.expandVisible = true
 	a.tapp.SetFocus(a.panels.expand)
+}
+
+// collapseExpand hides the expand panel without changing focus.
+// Use this for programmatic dismissal when another action takes over (tab/item switch).
+func (a *App) collapseExpand() {
+	if !a.expandVisible {
+		return
+	}
+	a.panels.rightFlex.ResizeItem(a.panels.expand, 0, 0)
+	a.expandVisible = false
 }
 
 // hideExpand hides the expand panel and returns focus to the items list.
@@ -794,4 +1045,178 @@ func (a *App) cleanup() {
 func (a *App) Run() error {
 	defer a.cleanup()
 	return a.tapp.Run()
+}
+
+// ── CW Logs streams + live tail ──────────────────────────────────────────────
+
+// isCWLogsTailActive returns true when the active provider is CloudWatchLogsProvider
+// and the active tab is "Tail". Used by renderDetail to override rendering.
+func (a *App) isCWLogsTailActive() bool {
+	if _, ok := a.providers[a.activeProvider].(*awspkg.CloudWatchLogsProvider); !ok {
+		return false
+	}
+	tabs := a.providers[a.activeProvider].Tabs()
+	return a.activeTab < len(tabs) && tabs[a.activeTab].Label == "Tail"
+}
+
+// isCWStreamsTabFocused returns true when the detail pane has focus, the active
+// provider is CloudWatchLogsProvider, the active tab is Streams, and streams are cached.
+func (a *App) isCWStreamsTabFocused() bool {
+	if a.tapp.GetFocus() != a.panels.detail {
+		return false
+	}
+	if _, ok := a.providers[a.activeProvider].(*awspkg.CloudWatchLogsProvider); !ok {
+		return false
+	}
+	tabs := a.providers[a.activeProvider].Tabs()
+	if a.activeTab >= len(tabs) || tabs[a.activeTab].Label != "Streams" {
+		return false
+	}
+	return len(a.cachedCWLogStreams) > 0
+}
+
+// moveCWStreamRow adjusts selectedCWStreamRow by delta (clamped) and re-renders.
+func (a *App) moveCWStreamRow(delta int) {
+	n := len(a.cachedCWLogStreams)
+	if n == 0 {
+		return
+	}
+	a.selectedCWStreamRow += delta
+	if a.selectedCWStreamRow < 0 {
+		a.selectedCWStreamRow = 0
+	}
+	if a.selectedCWStreamRow >= n {
+		a.selectedCWStreamRow = n - 1
+	}
+	a.renderDetail()
+}
+
+// startCWTailStream cancels any existing stream and starts a new one for the
+// current log group, filtered to the selected stream (if any).
+func (a *App) startCWTailStream() {
+	if a.cwTailCancel != nil {
+		a.cwTailCancel()
+		a.cwTailCancel = nil
+	}
+	cwlp, ok := a.providers[a.activeProvider].(*awspkg.CloudWatchLogsProvider)
+	if !ok {
+		return
+	}
+	group := a.currentItem.ID
+	stream := ""
+	if len(a.cachedCWLogStreams) > 0 && a.selectedCWStreamRow < len(a.cachedCWLogStreams) {
+		stream = a.cachedCWLogStreams[a.selectedCWStreamRow].Name
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	a.cwTailCancel = cancel
+	go func() {
+		cwlp.StartTail(ctx, group, stream, func(ts int64, group, stream, msg string) { //nolint:errcheck
+			a.tapp.QueueUpdateDraw(func() {
+				a.cwTailEvents = append(a.cwTailEvents, cwTailEvent{
+					ts:     time.UnixMilli(ts),
+					group:  group,
+					stream: stream,
+					msg:    msg,
+				})
+				if len(a.cwTailEvents) > 200 {
+					a.cwTailEvents = a.cwTailEvents[1:]
+				}
+				if a.isCWLogsTailActive() {
+					a.renderDetail()
+				}
+			})
+		})
+	}()
+}
+
+// stopCWTailStream cancels the active tail stream and clears live event state.
+func (a *App) stopCWTailStream() {
+	if a.cwTailCancel != nil {
+		a.cwTailCancel()
+		a.cwTailCancel = nil
+	}
+	a.cwTailEvents = nil
+}
+
+// renderCWStreamsWithHighlight rebuilds the Streams tab table with the selected row highlighted.
+func (a *App) renderCWStreamsWithHighlight() string {
+	if len(a.cachedCWLogStreams) == 0 {
+		return a.tabCache[a.activeTab]
+	}
+	headers := []string{"Stream Name", "Last Event"}
+	rows := make([][]string, len(a.cachedCWLogStreams))
+	for i, s := range a.cachedCWLogStreams {
+		name := s.Name
+		if len(name) > 50 {
+			name = name[:47] + "..."
+		}
+		rows[i] = []string{name, s.LastEvent}
+	}
+
+	widths := make([]int, len(headers))
+	for i, h := range headers {
+		widths[i] = len(h)
+	}
+	for _, row := range rows {
+		for i, cell := range row {
+			if i < len(widths) && len(cell) > widths[i] {
+				widths[i] = len(cell)
+			}
+		}
+	}
+	padded := make([]string, len(headers))
+	for i, h := range headers {
+		padded[i] = fmt.Sprintf("%-*s", widths[i]+2, h)
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "  %s%s[-]\n  ", a.theme.HeaderTag, strings.Join(padded, ""))
+	for _, w := range widths {
+		sb.WriteString(strings.Repeat("─", w) + "  ")
+	}
+	sb.WriteString("\n")
+	for i, row := range rows {
+		if i == a.selectedCWStreamRow {
+			sb.WriteString("  " + a.theme.HighlightTag)
+		} else {
+			sb.WriteString("  ")
+		}
+		for j, cell := range row {
+			if j < len(widths) {
+				fmt.Fprintf(&sb, "%-*s", widths[j]+2, cell)
+			}
+		}
+		if i == a.selectedCWStreamRow {
+			sb.WriteString("[-]")
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// renderCWLogTail generates the content for the CW Logs Tail tab.
+func (a *App) renderCWLogTail() string {
+	ht := a.theme.HeaderTag
+	var sb strings.Builder
+
+	stream := ""
+	if len(a.cachedCWLogStreams) > 0 && a.selectedCWStreamRow < len(a.cachedCWLogStreams) {
+		stream = a.cachedCWLogStreams[a.selectedCWStreamRow].Name
+	}
+	fmt.Fprintf(&sb, "  %sGroup%s   %s\n", ht, "[-]", a.currentItem.ID)
+	if stream != "" {
+		fmt.Fprintf(&sb, "  %sStream%s  %s\n", ht, "[-]", stream)
+	}
+	status := "streaming…"
+	if a.cwTailCancel == nil {
+		status = "idle"
+	}
+	fmt.Fprintf(&sb, "  %sStatus%s  %s\n\n", ht, "[-]", status)
+
+	if len(a.cwTailEvents) == 0 && a.cwTailCancel != nil {
+		sb.WriteString("  Waiting for events…\n")
+	}
+	for _, ev := range a.cwTailEvents {
+		fmt.Fprintf(&sb, "  %s  %s\n", ev.ts.UTC().Format("15:04:05"), ev.msg)
+	}
+	return sb.String()
 }

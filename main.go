@@ -40,6 +40,7 @@ func main() {
 		awspkg.NewKMSProvider(cfg, *local),
 		awspkg.NewStepFunctionsProvider(cfg, *local),
 		awspkg.NewCloudWatchProvider(cfg, *local),
+		awspkg.NewCloudWatchLogsProvider(cfg, *local),
 		awspkg.NewEventBridgeProvider(cfg, *local),
 		awspkg.NewEC2Provider(cfg, *local),
 	}
