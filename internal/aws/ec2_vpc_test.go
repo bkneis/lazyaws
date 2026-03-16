@@ -12,10 +12,9 @@ import (
 )
 
 type stubVpc struct {
-	vpcs           []ec2types.Vpc
-	subnets        []ec2types.Subnet
-	routeTables    []ec2types.RouteTable
-	securityGroups []ec2types.SecurityGroup
+	vpcs        []ec2types.Vpc
+	subnets     []ec2types.Subnet
+	routeTables []ec2types.RouteTable
 }
 
 func (s *stubVpc) DescribeVpcs(_ context.Context, _ *ec2.DescribeVpcsInput, _ ...func(*ec2.Options)) (*ec2.DescribeVpcsOutput, error) {
@@ -28,10 +27,6 @@ func (s *stubVpc) DescribeSubnets(_ context.Context, _ *ec2.DescribeSubnetsInput
 
 func (s *stubVpc) DescribeRouteTables(_ context.Context, _ *ec2.DescribeRouteTablesInput, _ ...func(*ec2.Options)) (*ec2.DescribeRouteTablesOutput, error) {
 	return &ec2.DescribeRouteTablesOutput{RouteTables: s.routeTables}, nil
-}
-
-func (s *stubVpc) DescribeSecurityGroups(_ context.Context, _ *ec2.DescribeSecurityGroupsInput, _ ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupsOutput, error) {
-	return &ec2.DescribeSecurityGroupsOutput{SecurityGroups: s.securityGroups}, nil
 }
 
 func TestEC2VPCProvider_ListItems(t *testing.T) {
@@ -95,9 +90,6 @@ func TestEC2VPCProvider_Tabs(t *testing.T) {
 		routeTables: []ec2types.RouteTable{
 			{RouteTableId: aws.String("rtb-bbb"), Routes: []ec2types.Route{{GatewayId: aws.String("igw-123")}}, Associations: []ec2types.RouteTableAssociation{}},
 		},
-		securityGroups: []ec2types.SecurityGroup{
-			{GroupId: aws.String("sg-ccc"), GroupName: aws.String("default"), Description: aws.String("default VPC security group")},
-		},
 	}
 	p := awspkg.NewEC2VPCProviderWithClient(stub)
 	item := awspkg.Item{
@@ -119,7 +111,6 @@ func TestEC2VPCProvider_Tabs(t *testing.T) {
 		{"Overview", "10.0.0.0/16"},
 		{"Subnets", "subnet-aaa"},
 		{"Route Tables", "rtb-bbb"},
-		{"Security Groups", "sg-ccc"},
 	}
 	tabs := p.Tabs()
 	if len(tabs) != len(cases) {

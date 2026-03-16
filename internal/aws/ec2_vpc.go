@@ -15,7 +15,6 @@ type VpcAPI interface {
 	DescribeVpcs(ctx context.Context, in *ec2.DescribeVpcsInput, opts ...func(*ec2.Options)) (*ec2.DescribeVpcsOutput, error)
 	DescribeSubnets(ctx context.Context, in *ec2.DescribeSubnetsInput, opts ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error)
 	DescribeRouteTables(ctx context.Context, in *ec2.DescribeRouteTablesInput, opts ...func(*ec2.Options)) (*ec2.DescribeRouteTablesOutput, error)
-	DescribeSecurityGroups(ctx context.Context, in *ec2.DescribeSecurityGroupsInput, opts ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupsOutput, error)
 }
 
 // EC2VPCProvider implements Provider for Amazon VPCs.
@@ -75,7 +74,6 @@ func (p *EC2VPCProvider) Tabs() []TabDef {
 		{Label: "Overview", Fetch: p.tabOverview},
 		{Label: "Subnets", Fetch: p.tabSubnets},
 		{Label: "Route Tables", Fetch: p.tabRouteTables},
-		{Label: "Security Groups", Fetch: p.tabSecurityGroups},
 	}
 }
 
@@ -139,26 +137,4 @@ func (p *EC2VPCProvider) tabRouteTables(ctx context.Context, item Item) (string,
 	return Table([]string{"Route Table ID", "Routes", "Associations"}, rows), nil
 }
 
-func (p *EC2VPCProvider) tabSecurityGroups(ctx context.Context, item Item) (string, error) {
-	out, err := p.client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
-		Filters: []ec2types.Filter{
-			{Name: awssdk.String("vpc-id"), Values: []string{item.ID}},
-		},
-	})
-	if err != nil {
-		return "", err
-	}
-	if len(out.SecurityGroups) == 0 {
-		return "  (no security groups)\n", nil
-	}
-	rows := make([][]string, len(out.SecurityGroups))
-	for i, sg := range out.SecurityGroups {
-		rows[i] = []string{
-			awssdk.ToString(sg.GroupId),
-			awssdk.ToString(sg.GroupName),
-			awssdk.ToString(sg.Description),
-		}
-	}
-	return Table([]string{"Group ID", "Name", "Description"}, rows), nil
-}
 
