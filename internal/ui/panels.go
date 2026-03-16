@@ -64,6 +64,7 @@ func newPanels(t Theme) *panels {
 		t.HeaderTag + "[[]·][-]: tab   " +
 		t.HeaderTag + "/[-]: search   " +
 		t.HeaderTag + "r[-]: refresh   " +
+		t.HeaderTag + "g[-]: gonzo   " +
 		t.HeaderTag + "q[-]: quit"
 	status := tview.NewTextView().SetDynamicColors(true).SetText(" " + hints)
 

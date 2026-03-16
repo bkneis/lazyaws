@@ -1193,6 +1193,55 @@ func (a *App) renderCWStreamsWithHighlight() string {
 	return sb.String()
 }
 
+// isCWLogsActive returns true when the active provider is CloudWatchLogsProvider
+// and a log group is selected.
+func (a *App) isCWLogsActive() bool {
+	if _, ok := a.providers[a.activeProvider].(*awspkg.CloudWatchLogsProvider); !ok {
+		return false
+	}
+	return a.currentItem.ID != ""
+}
+
+// openInGonzo suspends the TUI, starts gonzo, and pipes the live tail of the
+// current CloudWatch log group into gonzo's stdin. Resumes lazyaws when gonzo exits.
+func (a *App) openInGonzo() {
+	cwlp, ok := a.providers[a.activeProvider].(*awspkg.CloudWatchLogsProvider)
+	if !ok {
+		return
+	}
+	if _, err := exec.LookPath("gonzo"); err != nil {
+		a.showStatusMessage("[red]gonzo not found in PATH[-]")
+		return
+	}
+
+	group := a.currentItem.ID
+	cmd := exec.Command("gonzo")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		a.showStatusMessage(fmt.Sprintf("[red]gonzo pipe: %v[-]", err))
+		return
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	a.tapp.Suspend(func() {
+		if err := cmd.Start(); err != nil {
+			cancel()
+			return
+		}
+		go func() {
+			cwlp.StartTail(ctx, group, "", func(_ int64, _, _, msg string) { //nolint:errcheck
+				fmt.Fprintln(stdin, msg)
+			})
+			stdin.Close()
+		}()
+		cmd.Wait() //nolint:errcheck
+		cancel()
+	})
+}
+
 // renderCWLogTail generates the content for the CW Logs Tail tab.
 func (a *App) renderCWLogTail() string {
 	ht := a.theme.HeaderTag
