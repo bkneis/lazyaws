@@ -15,7 +15,7 @@ func KV(pairs [][2]string) string {
 	}
 	var sb strings.Builder
 	for _, p := range pairs {
-		fmt.Fprintf(&sb, "  [cyan]%-*s[-]  %s\n", maxKey+1, p[0]+":", p[1])
+		fmt.Fprintf(&sb, "  %s%-*s[-]  %s\n", ActiveTags.Header, maxKey+1, p[0]+":", p[1])
 	}
 	return sb.String()
 }
@@ -63,7 +63,7 @@ func Table(headers []string, rows [][]string) string {
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "  [cyan]%s[-]\n  ", strings.Join(padded, ""))
+	fmt.Fprintf(&sb, "  %s%s[-]\n  ", ActiveTags.Header, strings.Join(padded, ""))
 	for _, w := range widths {
 		sb.WriteString(strings.Repeat("─", w) + "  ")
 	}
@@ -95,7 +95,7 @@ func IsSensitiveKey(k string) bool {
 // Link returns a styled cross-resource link. Navigation metadata is embedded
 // as \x02provider:targetID\x03 (stripped before display, parsed for navigation).
 func Link(label, providerName, targetID string) string {
-	return "\x02" + providerName + ":" + targetID + "\x03" + "[aqua::u]" + label + "[-::-]"
+	return "\x02" + providerName + ":" + targetID + "\x03" + ActiveTags.Link + label + "[-::-]"
 }
 
 // arnLastSegment returns the resource name from an ARN.

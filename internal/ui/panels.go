@@ -5,36 +5,36 @@ import (
 	"github.com/rivo/tview"
 )
 
-const focusColor = tcell.ColorAqua
-
-const hintsText = " [cyan]Tab[-]/[cyan]S-Tab[-]: panel   [cyan]j/k[-]: navigate   [cyan][[]·][-]: tab   [cyan]/[-]: search   [cyan]r[-]: refresh   [cyan]q[-]: quit"
-
 // panels holds the three tview widgets and the currently focused index.
 type panels struct {
 	resources   *tview.List
 	items       *tview.List
-	tabBar      *tview.TextView  // single-row tab header
-	detail      *tview.TextView  // scrollable content area
-	expand      *tview.TextView  // expansion panel (hidden by default)
-	rightFlex   *tview.Flex      // vertical flex containing tabBar+detail+expand
+	tabBar      *tview.TextView // single-row tab header
+	detail      *tview.TextView // scrollable content area
+	expand      *tview.TextView // expansion panel (hidden by default)
+	rightFlex   *tview.Flex     // vertical flex containing tabBar+detail+expand
 	status      *tview.TextView
 	searchInput *tview.InputField
-	prompt      *tview.TextView  // y/n prompt widget (used in Feature 4)
+	prompt      *tview.TextView // y/n prompt widget
 	statusPages *tview.Pages
+	hintsText   string
 	focused     int // 0=resources, 1=items, 2=detail
 }
 
-func newPanels() *panels {
+func newPanels(t Theme) *panels {
+	fc := t.FocusColor
+	st := t.SelectionText
+
 	resources := tview.NewList().ShowSecondaryText(false)
-	resources.SetBorder(true).SetTitle(" Resources ").SetBorderColor(focusColor)
-	resources.SetSelectedTextColor(tcell.ColorBlack).SetSelectedBackgroundColor(focusColor)
-	resources.SetFocusFunc(func() { resources.SetBorderColor(focusColor) }).
+	resources.SetBorder(true).SetTitle(" Resources ").SetBorderColor(fc)
+	resources.SetSelectedTextColor(st).SetSelectedBackgroundColor(fc)
+	resources.SetFocusFunc(func() { resources.SetBorderColor(fc) }).
 		SetBlurFunc(func() { resources.SetBorderColor(tcell.ColorDefault) })
 
 	items := tview.NewList().ShowSecondaryText(false)
 	items.SetBorder(true).SetTitle(" Items ")
-	items.SetSelectedTextColor(tcell.ColorBlack).SetSelectedBackgroundColor(focusColor)
-	items.SetFocusFunc(func() { items.SetBorderColor(focusColor) }).
+	items.SetSelectedTextColor(st).SetSelectedBackgroundColor(fc)
+	items.SetFocusFunc(func() { items.SetBorderColor(fc) }).
 		SetBlurFunc(func() { items.SetBorderColor(tcell.ColorDefault) })
 
 	tabBar := tview.NewTextView().
@@ -45,7 +45,7 @@ func newPanels() *panels {
 		SetScrollable(true).
 		SetWrap(false)
 	detail.SetBorder(true).SetTitle(" Detail ")
-	detail.SetFocusFunc(func() { detail.SetBorderColor(focusColor) }).
+	detail.SetFocusFunc(func() { detail.SetBorderColor(fc) }).
 		SetBlurFunc(func() { detail.SetBorderColor(tcell.ColorDefault) })
 
 	expand := tview.NewTextView().
@@ -59,7 +59,13 @@ func newPanels() *panels {
 		AddItem(detail, 0, 2, false).
 		AddItem(expand, 0, 0, false) // proportion 0 = hidden
 
-	status := tview.NewTextView().SetDynamicColors(true).SetText(hintsText)
+	hints := t.HeaderTag + "Tab[-]/" + t.HeaderTag + "S-Tab[-]: panel   " +
+		t.HeaderTag + "j/k[-]: navigate   " +
+		t.HeaderTag + "[[]·][-]: tab   " +
+		t.HeaderTag + "/[-]: search   " +
+		t.HeaderTag + "r[-]: refresh   " +
+		t.HeaderTag + "q[-]: quit"
+	status := tview.NewTextView().SetDynamicColors(true).SetText(" " + hints)
 
 	searchInput := tview.NewInputField().
 		SetLabel("/ ").
@@ -81,6 +87,7 @@ func newPanels() *panels {
 		expand:      expand,
 		rightFlex:   rightFlex,
 		status:      status,
+		hintsText:   " " + hints,
 		searchInput: searchInput,
 		prompt:      prompt,
 		statusPages: statusPages,

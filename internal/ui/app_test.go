@@ -16,32 +16,21 @@ func TestRenderTabBar(t *testing.T) {
 	}
 	cases := []struct {
 		active      int
-		wantActive  string // bracket-style active tab substring
 		wantOffsets []int
 	}{
-		{
-			active:      0,
-			wantActive:  "[aqua][ Overview ][-]",
-			wantOffsets: []int{0, 10, 19},
-		},
-		{
-			active:      1,
-			wantActive:  "[aqua][ Objects ][-]",
-			wantOffsets: []int{0, 10, 19},
-		},
-		{
-			active:      2,
-			wantActive:  "[aqua][ Policy ][-]",
-			wantOffsets: []int{0, 10, 19},
-		},
+		{active: 0, wantOffsets: []int{0, 10, 19}},
+		{active: 1, wantOffsets: []int{0, 10, 19}},
+		{active: 2, wantOffsets: []int{0, 10, 19}},
 	}
+	theme := DetectTheme()
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("active=%d", tc.active), func(t *testing.T) {
-			a := &App{panels: newPanels(), activeTab: tc.active}
+			a := &App{panels: newPanels(theme), theme: theme, activeTab: tc.active}
 			a.renderTabBar(tabs)
 			got := a.panels.tabBar.GetText(false)
-			if !strings.Contains(got, tc.wantActive) {
-				t.Errorf("active=%d: got %q, want to contain %q", tc.active, got, tc.wantActive)
+			wantActive := theme.ActiveTabTag + "[ " + tabs[tc.active].Label + " ][-]"
+			if !strings.Contains(got, wantActive) {
+				t.Errorf("active=%d: got %q, want to contain %q", tc.active, got, wantActive)
 			}
 			if len(a.tabBarOffsets) != len(tc.wantOffsets) {
 				t.Fatalf("active=%d: got %d offsets, want %d", tc.active, len(a.tabBarOffsets), len(tc.wantOffsets))

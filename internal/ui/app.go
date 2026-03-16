@@ -40,6 +40,7 @@ type navState struct {
 type App struct {
 	tapp              *tview.Application
 	panels            *panels
+	theme             Theme
 	providers         []awspkg.Provider
 	loadedItems       []awspkg.Item // mirrors items list for Enter handler
 	activeProvider    int
@@ -59,11 +60,12 @@ type App struct {
 	promptNoHandler   func()
 }
 
-// NewApp constructs the App with the given resource providers.
-func NewApp(providers []awspkg.Provider) *App {
+// NewApp constructs the App with the given resource providers and color theme.
+func NewApp(providers []awspkg.Provider, theme Theme) *App {
 	a := &App{
 		tapp:      tview.NewApplication(),
-		panels:    newPanels(),
+		panels:    newPanels(theme),
+		theme:     theme,
 		providers: providers,
 	}
 	a.build()
@@ -138,6 +140,30 @@ func (a *App) build() {
 			widgetX, _, _, _ := a.panels.tabBar.GetRect() // widget's left edge on screen
 			a.selectTabByColumn(screenCol - widgetX)
 			return action, nil
+		}
+		return action, event
+	})
+
+	// Wire mouse click on detail to select S3 object rows.
+	a.panels.detail.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		if action == tview.MouseLeftClick {
+			_, ok := a.providers[a.activeProvider].(*awspkg.S3Provider)
+			tabs := a.providers[a.activeProvider].Tabs()
+			isObjectsTab := ok && a.activeTab < len(tabs) && tabs[a.activeTab].Label == "Objects" && len(a.cachedObjects) > 0
+			if isObjectsTab {
+				_, screenY := event.Position()
+				_, widgetY, _, _ := a.panels.detail.GetRect()
+				scrollRow, _ := a.panels.detail.GetScrollOffset()
+				contentRow := (screenY - widgetY - 1) + scrollRow // -1 for border
+				objIdx := contentRow - 2                          // skip header + separator rows
+				if objIdx >= 0 && objIdx < len(a.cachedObjects) {
+					a.selectedObjectRow = objIdx
+					a.moveObjectRow(0)
+					a.panels.focused = 2
+					a.tapp.SetFocus(a.panels.detail)
+				}
+				return action, nil
+			}
 		}
 		return action, event
 	})
@@ -223,6 +249,11 @@ func (a *App) loadItems(i int, query string) {
 					a.selectItem(i, item)
 				})
 			}
+			if len(items) > 0 {
+				a.panels.focused = 1
+				a.tapp.SetFocus(a.panels.items)
+				a.selectItem(i, items[0])
+			}
 		})
 	}()
 }
@@ -238,7 +269,8 @@ func (a *App) enterSearch() {
 func (a *App) executeSearch(query string) {
 	a.panels.searchInput.SetText("")
 	a.panels.statusPages.SwitchToPage("hints")
-	a.panels.status.SetText(" [cyan]search:[-] " + query + "   [cyan]esc[-]: clear")
+	ht := a.theme.HeaderTag
+	a.panels.status.SetText(" " + ht + "search:[-] " + query + "   " + ht + "esc[-]: clear")
 	a.loadItems(a.activeProvider, query)
 	a.restoreFocus()
 }
@@ -254,7 +286,7 @@ func (a *App) clearSearch() {
 
 // resetHints restores the status bar to the default key-binding hints.
 func (a *App) resetHints() {
-	a.panels.status.SetText(hintsText)
+	a.panels.status.SetText(a.panels.hintsText)
 }
 
 // restoreFocus returns focus to the panel that was active before search.
@@ -363,14 +395,14 @@ func (a *App) renderObjectsWithHighlight() string {
 		padded[i] = fmt.Sprintf("%-*s", widths[i]+2, h)
 	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "  [cyan]%s[-]\n  ", strings.Join(padded, ""))
+	fmt.Fprintf(&sb, "  %s%s[-]\n  ", a.theme.HeaderTag, strings.Join(padded, ""))
 	for _, w := range widths {
 		sb.WriteString(strings.Repeat("─", w) + "  ")
 	}
 	sb.WriteString("\n")
 	for i, row := range rows {
 		if i == a.selectedObjectRow {
-			sb.WriteString("  [aqua]")
+			sb.WriteString("  " + a.theme.HighlightTag)
 		} else {
 			sb.WriteString("  ")
 		}
@@ -433,9 +465,9 @@ func (a *App) renderTabBar(tabs []awspkg.TabDef) {
 		label := " " + tab.Label + " "
 		a.tabBarOffsets[i] = col
 		if i == a.activeTab {
-			line.WriteString("[aqua][ " + tab.Label + " ][-]")
+			line.WriteString(a.theme.ActiveTabTag + "[ " + tab.Label + " ][-]")
 		} else {
-			line.WriteString("[gray]" + label + "[-]")
+			line.WriteString(a.theme.InactiveTabTag + label + "[-]")
 		}
 		col += len(label)
 	}
@@ -443,6 +475,7 @@ func (a *App) renderTabBar(tabs []awspkg.TabDef) {
 }
 
 // selectTab switches to the given tab index, fetching if not yet loaded.
+// Focuses the detail panel so keyboard navigation works immediately after a tab click.
 func (a *App) selectTab(idx int) {
 	tabs := a.providers[a.activeProvider].Tabs()
 	if idx < 0 || idx >= len(tabs) || len(a.tabLoaded) == 0 {
@@ -454,6 +487,8 @@ func (a *App) selectTab(idx int) {
 	} else {
 		a.renderDetail()
 	}
+	a.panels.focused = 2
+	a.tapp.SetFocus(a.panels.detail)
 }
 
 // selectTabByColumn maps a clicked display column to the tab index and selects it.

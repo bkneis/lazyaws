@@ -37,6 +37,17 @@ type Expandable interface {
 	Expand(ctx context.Context, item Item) (string, error)
 }
 
+// ColorTags holds tview markup tags for color-rendering in provider output.
+// Set ActiveTags once at startup before the TUI starts.
+type ColorTags struct {
+	Header string // e.g. "[cyan]" — KV keys and table headers
+	Link   string // e.g. "[aqua::u]" — cross-resource links
+}
+
+// ActiveTags is the package-level color scheme used by KV, Table, and Link.
+// Defaults to the original cyan/aqua scheme.
+var ActiveTags = ColorTags{Header: "[cyan]", Link: "[aqua::u]"}
+
 // filterItems returns items whose Name contains query (case-insensitive).
 // Returns items unchanged when query is empty.
 func filterItems(items []Item, query string) []Item {

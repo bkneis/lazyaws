@@ -14,7 +14,7 @@ func TestPanels_next(t *testing.T) {
 		{start: 2, expected: 0}, // wraps around
 	}
 	for _, tc := range cases {
-		p := newPanels()
+		p := newPanels(DetectTheme())
 		p.focused = tc.start
 		p.next()
 		if p.focused != tc.expected {
@@ -33,7 +33,7 @@ func TestPanels_prev(t *testing.T) {
 		{start: 0, expected: 2}, // wraps around
 	}
 	for _, tc := range cases {
-		p := newPanels()
+		p := newPanels(DetectTheme())
 		p.focused = tc.start
 		p.prev()
 		if p.focused != tc.expected {
