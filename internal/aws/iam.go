@@ -21,10 +21,10 @@ type IAMAPI interface {
 
 type IAMProvider struct{ client IAMAPI }
 
-func NewIAMProvider(cfg awssdk.Config, local bool) *IAMProvider {
+func NewIAMProvider(cfg awssdk.Config, endpointURL string) *IAMProvider {
 	var opts []func(*iam.Options)
-	if local {
-		opts = append(opts, func(o *iam.Options) { o.BaseEndpoint = awssdk.String("http://localhost:4566") })
+	if endpointURL != "" {
+		opts = append(opts, func(o *iam.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
 	return &IAMProvider{client: iam.NewFromConfig(cfg, opts...)}
 }

@@ -32,12 +32,12 @@ type APIGatewayProvider struct {
 	v1 APIGatewayV1API
 }
 
-func NewAPIGatewayProvider(cfg awssdk.Config, local bool) *APIGatewayProvider {
+func NewAPIGatewayProvider(cfg awssdk.Config, endpointURL string) *APIGatewayProvider {
 	var optsV2 []func(*apigwv2.Options)
 	var optsV1 []func(*apigwv1.Options)
-	if local {
-		optsV2 = append(optsV2, func(o *apigwv2.Options) { o.BaseEndpoint = awssdk.String("http://localhost:4566") })
-		optsV1 = append(optsV1, func(o *apigwv1.Options) { o.BaseEndpoint = awssdk.String("http://localhost:4566") })
+	if endpointURL != "" {
+		optsV2 = append(optsV2, func(o *apigwv2.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
+		optsV1 = append(optsV1, func(o *apigwv1.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
 	return &APIGatewayProvider{
 		v2: apigwv2.NewFromConfig(cfg, optsV2...),

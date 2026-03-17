@@ -23,11 +23,11 @@ type EC2VolumesProvider struct {
 	client VolumesAPI
 }
 
-func NewEC2VolumesProvider(cfg awssdk.Config, local bool) *EC2VolumesProvider {
+func NewEC2VolumesProvider(cfg awssdk.Config, endpointURL string) *EC2VolumesProvider {
 	var opts []func(*ec2.Options)
-	if local {
+	if endpointURL != "" {
 		opts = append(opts, func(o *ec2.Options) {
-			o.BaseEndpoint = awssdk.String("http://localhost:4566")
+			o.BaseEndpoint = awssdk.String(endpointURL)
 		})
 	}
 	return &EC2VolumesProvider{client: ec2.NewFromConfig(cfg, opts...)}

@@ -22,11 +22,11 @@ type EC2ImagesProvider struct {
 	client ImagesAPI
 }
 
-func NewEC2ImagesProvider(cfg awssdk.Config, local bool) *EC2ImagesProvider {
+func NewEC2ImagesProvider(cfg awssdk.Config, endpointURL string) *EC2ImagesProvider {
 	var opts []func(*ec2.Options)
-	if local {
+	if endpointURL != "" {
 		opts = append(opts, func(o *ec2.Options) {
-			o.BaseEndpoint = awssdk.String("http://localhost:4566")
+			o.BaseEndpoint = awssdk.String(endpointURL)
 		})
 	}
 	return &EC2ImagesProvider{client: ec2.NewFromConfig(cfg, opts...)}

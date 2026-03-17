@@ -18,10 +18,10 @@ type SNSAPI interface {
 
 type SNSProvider struct{ client SNSAPI }
 
-func NewSNSProvider(cfg awssdk.Config, local bool) *SNSProvider {
+func NewSNSProvider(cfg awssdk.Config, endpointURL string) *SNSProvider {
 	var opts []func(*sns.Options)
-	if local {
-		opts = append(opts, func(o *sns.Options) { o.BaseEndpoint = awssdk.String("http://localhost:4566") })
+	if endpointURL != "" {
+		opts = append(opts, func(o *sns.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
 	return &SNSProvider{client: sns.NewFromConfig(cfg, opts...)}
 }

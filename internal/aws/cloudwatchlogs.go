@@ -61,11 +61,11 @@ type CloudWatchLogsProvider struct {
 	lastStreams []CWLogStreamRow // cached by tabStreams for row-selection in the App
 }
 
-func NewCloudWatchLogsProvider(cfg awssdk.Config, local bool) *CloudWatchLogsProvider {
+func NewCloudWatchLogsProvider(cfg awssdk.Config, endpointURL string) *CloudWatchLogsProvider {
 	var opts []func(*cloudwatchlogs.Options)
-	if local {
+	if endpointURL != "" {
 		opts = append(opts, func(o *cloudwatchlogs.Options) {
-			o.BaseEndpoint = awssdk.String("http://localhost:4566")
+			o.BaseEndpoint = awssdk.String(endpointURL)
 		})
 	}
 	return &CloudWatchLogsProvider{client: &cwlClientAdapter{client: cloudwatchlogs.NewFromConfig(cfg, opts...)}}

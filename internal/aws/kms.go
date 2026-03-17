@@ -24,11 +24,11 @@ type KMSProvider struct {
 	client KMSAPI
 }
 
-func NewKMSProvider(cfg awssdk.Config, local bool) *KMSProvider {
+func NewKMSProvider(cfg awssdk.Config, endpointURL string) *KMSProvider {
 	var opts []func(*kms.Options)
-	if local {
+	if endpointURL != "" {
 		opts = append(opts, func(o *kms.Options) {
-			o.BaseEndpoint = awssdk.String("http://localhost:4566")
+			o.BaseEndpoint = awssdk.String(endpointURL)
 		})
 	}
 	return &KMSProvider{client: kms.NewFromConfig(cfg, opts...)}

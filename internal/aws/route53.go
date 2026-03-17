@@ -18,10 +18,10 @@ type Route53API interface {
 
 type Route53Provider struct{ client Route53API }
 
-func NewRoute53Provider(cfg awssdk.Config, local bool) *Route53Provider {
+func NewRoute53Provider(cfg awssdk.Config, endpointURL string) *Route53Provider {
 	var opts []func(*route53.Options)
-	if local {
-		opts = append(opts, func(o *route53.Options) { o.BaseEndpoint = awssdk.String("http://localhost:4566") })
+	if endpointURL != "" {
+		opts = append(opts, func(o *route53.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
 	return &Route53Provider{client: route53.NewFromConfig(cfg, opts...)}
 }

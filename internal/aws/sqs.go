@@ -18,10 +18,10 @@ type SQSAPI interface {
 
 type SQSProvider struct{ client SQSAPI }
 
-func NewSQSProvider(cfg awssdk.Config, local bool) *SQSProvider {
+func NewSQSProvider(cfg awssdk.Config, endpointURL string) *SQSProvider {
 	var opts []func(*sqs.Options)
-	if local {
-		opts = append(opts, func(o *sqs.Options) { o.BaseEndpoint = awssdk.String("http://localhost:4566") })
+	if endpointURL != "" {
+		opts = append(opts, func(o *sqs.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
 	return &SQSProvider{client: sqs.NewFromConfig(cfg, opts...)}
 }

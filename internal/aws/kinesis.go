@@ -23,11 +23,11 @@ type KinesisProvider struct {
 	client KinesisAPI
 }
 
-func NewKinesisProvider(cfg awssdk.Config, local bool) *KinesisProvider {
+func NewKinesisProvider(cfg awssdk.Config, endpointURL string) *KinesisProvider {
 	var opts []func(*kinesis.Options)
-	if local {
+	if endpointURL != "" {
 		opts = append(opts, func(o *kinesis.Options) {
-			o.BaseEndpoint = awssdk.String("http://localhost:4566")
+			o.BaseEndpoint = awssdk.String(endpointURL)
 		})
 	}
 	return &KinesisProvider{client: kinesis.NewFromConfig(cfg, opts...)}

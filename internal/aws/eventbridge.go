@@ -20,11 +20,11 @@ type EventBridgeProvider struct {
 	client EventBridgeAPI
 }
 
-func NewEventBridgeProvider(cfg awssdk.Config, local bool) *EventBridgeProvider {
+func NewEventBridgeProvider(cfg awssdk.Config, endpointURL string) *EventBridgeProvider {
 	var opts []func(*eventbridge.Options)
-	if local {
+	if endpointURL != "" {
 		opts = append(opts, func(o *eventbridge.Options) {
-			o.BaseEndpoint = awssdk.String("http://localhost:4566")
+			o.BaseEndpoint = awssdk.String(endpointURL)
 		})
 	}
 	return &EventBridgeProvider{client: eventbridge.NewFromConfig(cfg, opts...)}

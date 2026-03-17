@@ -1,10 +1,10 @@
 services:
   localstack:
-    image: localstack/localstack:3
+    image: localstack/localstack:latest
     ports:
-      - "4566:4566"
+      - "4567:4566"
     environment:
-      - SERVICES=s3,lambda,sqs,sns,dynamodb,cloudformation,secretsmanager,apigateway,logs,events,iam,kinesis,stepfunctions
+      - SERVICES=s3,lambda,sqs,sns,dynamodb,cloudformation,secretsmanager,apigateway,logs,events,iam,kinesis,stepfunctions,events,cloudwatch,acm
       - DEFAULT_REGION=us-east-1
       - DEBUG=0
     volumes:

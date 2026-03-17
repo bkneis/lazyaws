@@ -22,11 +22,11 @@ type EC2Provider struct {
 	client EC2API
 }
 
-func NewEC2Provider(cfg awssdk.Config, local bool) *EC2Provider {
+func NewEC2Provider(cfg awssdk.Config, endpointURL string) *EC2Provider {
 	var opts []func(*ec2.Options)
-	if local {
+	if endpointURL != "" {
 		opts = append(opts, func(o *ec2.Options) {
-			o.BaseEndpoint = awssdk.String("http://localhost:4566")
+			o.BaseEndpoint = awssdk.String(endpointURL)
 		})
 	}
 	return &EC2Provider{client: ec2.NewFromConfig(cfg, opts...)}

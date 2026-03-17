@@ -8,7 +8,7 @@ Set FontSize 14
 Set FontFamily "JetBrains Mono"
 Set Width 1200
 Set Height 700
-Set Theme "Tokyo Night"
+Set Theme "TokyoNight"
 Set Padding 16
 Set PlaybackSpeed 1.0
 
@@ -45,11 +45,11 @@ Tab
 Sleep 600ms
 
 # Cycle through S3 tabs: Overview → Objects → Policy
-]
+Type "]"
 Sleep 800ms
-]
+Type "]"
 Sleep 800ms
-[
+Type "["
 Sleep 600ms
 
 # ── Switch to Lambda ──────────────────────────────────────────────────────────
@@ -79,11 +79,11 @@ Tab
 Sleep 600ms
 
 # Cycle Lambda tabs: Overview → Env vars → Triggers
-]
+Type "]"
 Sleep 800ms
-]
+Type "]"
 Sleep 800ms
-[
+Type "["
 Sleep 600ms
 
 # ── Switch to DynamoDB ────────────────────────────────────────────────────────
@@ -106,9 +106,9 @@ Sleep 400ms
 
 Tab
 Sleep 600ms
-]
+Type "]"
 Sleep 800ms
-[
+Type "["
 Sleep 600ms
 
 # ── Switch to Secrets Manager ─────────────────────────────────────────────────
@@ -130,9 +130,9 @@ Sleep 500ms
 
 Tab
 Sleep 600ms
-]
+Type "]"
 Sleep 800ms
-]
+Type "]"
 Sleep 800ms
 
 # ── Switch to CloudFormation ──────────────────────────────────────────────────
@@ -149,13 +149,13 @@ Sleep 500ms
 
 Tab
 Sleep 600ms
-]
+Type "]"
 Sleep 800ms
-]
+Type "]"
 Sleep 800ms
-]
+Type "]"
 Sleep 800ms
-[
+Type "["
 Sleep 800ms
 
 # ── Quit ──────────────────────────────────────────────────────────────────────

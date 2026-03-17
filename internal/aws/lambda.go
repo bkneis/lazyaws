@@ -21,11 +21,11 @@ type LambdaAPI interface {
 // LambdaProvider implements Provider for AWS Lambda.
 type LambdaProvider struct{ client LambdaAPI }
 
-func NewLambdaProvider(cfg awssdk.Config, local bool) *LambdaProvider {
+func NewLambdaProvider(cfg awssdk.Config, endpointURL string) *LambdaProvider {
 	var opts []func(*lambda.Options)
-	if local {
+	if endpointURL != "" {
 		opts = append(opts, func(o *lambda.Options) {
-			o.BaseEndpoint = awssdk.String("http://localhost:4566")
+			o.BaseEndpoint = awssdk.String(endpointURL)
 		})
 	}
 	return &LambdaProvider{client: lambda.NewFromConfig(cfg, opts...)}

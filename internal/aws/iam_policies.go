@@ -23,10 +23,10 @@ type IAMPoliciesAPI interface {
 // IAMPoliciesProvider implements Provider for customer-managed IAM Policies.
 type IAMPoliciesProvider struct{ client IAMPoliciesAPI }
 
-func NewIAMPoliciesProvider(cfg awssdk.Config, local bool) *IAMPoliciesProvider {
+func NewIAMPoliciesProvider(cfg awssdk.Config, endpointURL string) *IAMPoliciesProvider {
 	var opts []func(*iam.Options)
-	if local {
-		opts = append(opts, func(o *iam.Options) { o.BaseEndpoint = awssdk.String("http://localhost:4566") })
+	if endpointURL != "" {
+		opts = append(opts, func(o *iam.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
 	return &IAMPoliciesProvider{client: iam.NewFromConfig(cfg, opts...)}
 }

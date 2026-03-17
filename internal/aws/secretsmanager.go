@@ -21,10 +21,10 @@ type SMAPI interface {
 
 type SMProvider struct{ client SMAPI }
 
-func NewSecretsManagerProvider(cfg awssdk.Config, local bool) *SMProvider {
+func NewSecretsManagerProvider(cfg awssdk.Config, endpointURL string) *SMProvider {
 	var opts []func(*secretsmanager.Options)
-	if local {
-		opts = append(opts, func(o *secretsmanager.Options) { o.BaseEndpoint = awssdk.String("http://localhost:4566") })
+	if endpointURL != "" {
+		opts = append(opts, func(o *secretsmanager.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
 	return &SMProvider{client: secretsmanager.NewFromConfig(cfg, opts...)}
 }

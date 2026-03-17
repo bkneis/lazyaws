@@ -18,10 +18,10 @@ type ACMAPI interface {
 
 type ACMProvider struct{ client ACMAPI }
 
-func NewACMProvider(cfg awssdk.Config, local bool) *ACMProvider {
+func NewACMProvider(cfg awssdk.Config, endpointURL string) *ACMProvider {
 	var opts []func(*acm.Options)
-	if local {
-		opts = append(opts, func(o *acm.Options) { o.BaseEndpoint = awssdk.String("http://localhost:4566") })
+	if endpointURL != "" {
+		opts = append(opts, func(o *acm.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
 	return &ACMProvider{client: acm.NewFromConfig(cfg, opts...)}
 }

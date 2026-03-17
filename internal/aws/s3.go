@@ -61,11 +61,11 @@ type S3Provider struct {
 	selectedSize int64
 }
 
-func NewS3Provider(cfg awssdk.Config, local bool) *S3Provider {
+func NewS3Provider(cfg awssdk.Config, endpointURL string) *S3Provider {
 	var opts []func(*s3.Options)
-	if local {
+	if endpointURL != "" {
 		opts = append(opts, func(o *s3.Options) {
-			o.BaseEndpoint = awssdk.String("http://localhost:4566")
+			o.BaseEndpoint = awssdk.String(endpointURL)
 			o.UsePathStyle = true
 		})
 	}

@@ -21,11 +21,11 @@ type EC2SGProvider struct {
 	client SecurityGroupAPI
 }
 
-func NewEC2SGProvider(cfg awssdk.Config, local bool) *EC2SGProvider {
+func NewEC2SGProvider(cfg awssdk.Config, endpointURL string) *EC2SGProvider {
 	var opts []func(*ec2.Options)
-	if local {
+	if endpointURL != "" {
 		opts = append(opts, func(o *ec2.Options) {
-			o.BaseEndpoint = awssdk.String("http://localhost:4566")
+			o.BaseEndpoint = awssdk.String(endpointURL)
 		})
 	}
 	return &EC2SGProvider{client: ec2.NewFromConfig(cfg, opts...)}

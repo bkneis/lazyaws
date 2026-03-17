@@ -25,11 +25,11 @@ type ASGProvider struct {
 	client ASGAPI
 }
 
-func NewASGProvider(cfg awssdk.Config, local bool) *ASGProvider {
+func NewASGProvider(cfg awssdk.Config, endpointURL string) *ASGProvider {
 	var opts []func(*autoscaling.Options)
-	if local {
+	if endpointURL != "" {
 		opts = append(opts, func(o *autoscaling.Options) {
-			o.BaseEndpoint = awssdk.String("http://localhost:4566")
+			o.BaseEndpoint = awssdk.String(endpointURL)
 		})
 	}
 	return &ASGProvider{client: autoscaling.NewFromConfig(cfg, opts...)}

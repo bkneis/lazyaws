@@ -29,10 +29,10 @@ type CFAPI interface {
 
 type CFProvider struct{ client CFAPI }
 
-func NewCloudFormationProvider(cfg awssdk.Config, local bool) *CFProvider {
+func NewCloudFormationProvider(cfg awssdk.Config, endpointURL string) *CFProvider {
 	var opts []func(*cloudformation.Options)
-	if local {
-		opts = append(opts, func(o *cloudformation.Options) { o.BaseEndpoint = awssdk.String("http://localhost:4566") })
+	if endpointURL != "" {
+		opts = append(opts, func(o *cloudformation.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
 	return &CFProvider{client: cloudformation.NewFromConfig(cfg, opts...)}
 }

@@ -22,11 +22,11 @@ type CloudWatchProvider struct {
 	client CloudWatchAPI
 }
 
-func NewCloudWatchProvider(cfg awssdk.Config, local bool) *CloudWatchProvider {
+func NewCloudWatchProvider(cfg awssdk.Config, endpointURL string) *CloudWatchProvider {
 	var opts []func(*cloudwatch.Options)
-	if local {
+	if endpointURL != "" {
 		opts = append(opts, func(o *cloudwatch.Options) {
-			o.BaseEndpoint = awssdk.String("http://localhost:4566")
+			o.BaseEndpoint = awssdk.String(endpointURL)
 		})
 	}
 	return &CloudWatchProvider{client: cloudwatch.NewFromConfig(cfg, opts...)}

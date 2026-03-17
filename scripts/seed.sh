@@ -1,22 +1,88 @@
 #!/usr/bin/env bash
 # Seed LocalStack with realistic demo data for lazyaws.
 # Usage: ./scripts/seed.sh
-# Requires: aws CLI configured to point at LocalStack, or run after `docker compose up`.
+# Requires: awslocal CLI (`pip install awscli-local`) and LocalStack running via docker compose.
+# Safe to re-run — cleans up existing resources before recreating them.
 
 set -euo pipefail
 
-AWS="aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-  --no-cli-pager \
-  --output json"
+# awslocal reads LOCALSTACK_HOSTNAME + EDGE_PORT to build the endpoint URL.
+export LOCALSTACK_HOSTNAME=localhost
+export EDGE_PORT=4567
+export AWS_DEFAULT_REGION=us-east-1
+
+AWS="aws --endpoint-url=http://localhost:4567 --no-cli-pager --output json"
 
 echo "⏳ Waiting for LocalStack to be ready..."
-until curl -sf http://localhost:4566/_localstack/health | grep -q '"s3": "available"'; do
+until curl -sf http://localhost:4567/_localstack/health | grep -q '"s3": "available"'; do
   sleep 1
 done
 echo "✅ LocalStack ready"
 
+# ── Teardown (idempotent — all errors suppressed) ─────────────────────────────
+echo "🧹 Clearing previous state..."
+
+# S3
+for bucket in my-app-assets my-data-lake my-backups cfn-app-bucket; do
+  $AWS s3 rb s3://"$bucket" --force 2>/dev/null || true
+done
+
+# Lambda
+for fn in api-handler data-processor auth-validator notification-sender; do
+  $AWS lambda delete-function --function-name "$fn" 2>/dev/null || true
+done
+
+# SQS
+for q in orders orders-dlq notifications; do
+  url=$($AWS sqs get-queue-url --queue-name "$q" --query QueueUrl --output text 2>/dev/null) || true
+  [ -n "${url:-}" ] && $AWS sqs delete-queue --queue-url "$url" 2>/dev/null || true
+done
+
+# DynamoDB
+for table in users sessions; do
+  $AWS dynamodb delete-table --table-name "$table" 2>/dev/null || true
+done
+
+# Secrets Manager
+for secret in prod/db/password prod/stripe/api-key prod/jwt/signing-key; do
+  $AWS secretsmanager delete-secret --secret-id "$secret" \
+    --force-delete-without-recovery 2>/dev/null || true
+done
+
+# CloudWatch Logs
+for group in \
+  /aws/lambda/api-handler /aws/lambda/data-processor \
+  /aws/lambda/auth-validator /aws/lambda/notification-sender \
+  /app/production; do
+  $AWS logs delete-log-group --log-group-name "$group" 2>/dev/null || true
+done
+
+# EventBridge — must remove rule targets + rule before deleting the bus
+$AWS events remove-targets --rule OrderCreatedRule \
+  --event-bus-name app-events --ids "1" 2>/dev/null || true
+$AWS events delete-rule --name OrderCreatedRule \
+  --event-bus-name app-events 2>/dev/null || true
+$AWS events delete-event-bus --name app-events 2>/dev/null || true
+
+# Kinesis
+for stream in clickstream audit-log; do
+  $AWS kinesis delete-stream --stream-name "$stream" 2>/dev/null || true
+done
+
+# API Gateway v1 — delete all APIs named "lazyaws-demo-api" (create-rest-api is not idempotent)
+for id in $($AWS apigateway get-rest-apis \
+    --query 'items[?name==`lazyaws-demo-api`].id' --output text 2>/dev/null || true); do
+  $AWS apigateway delete-rest-api --rest-api-id "$id" 2>/dev/null || true
+done
+
+# CloudFormation
+$AWS cloudformation delete-stack --stack-name app-infra 2>/dev/null || true
+
 # ── S3 ────────────────────────────────────────────────────────────────────────
 echo "→ S3"
+for bucket in my-app-assets my-data-lake my-backups; do
+  $AWS s3api create-bucket --bucket "$bucket" >/dev/null
+doneecho "→ S3"
 for bucket in my-app-assets my-data-lake my-backups; do
   $AWS s3api create-bucket --bucket "$bucket" >/dev/null
 done
@@ -25,7 +91,6 @@ $AWS s3api put-bucket-versioning \
   --bucket my-app-assets \
   --versioning-configuration Status=Enabled >/dev/null
 
-# Seed objects
 echo '{"app":"lazyaws","version":"1.0.0"}' | $AWS s3 cp - s3://my-app-assets/config/app.json >/dev/null
 echo 'user_id,name,email'                  | $AWS s3 cp - s3://my-data-lake/exports/users.csv >/dev/null
 echo 'backup 2026-03-01'                   | $AWS s3 cp - s3://my-backups/db/2026-03-01.sql.gz >/dev/null
@@ -33,8 +98,6 @@ echo 'backup 2026-03-15'                   | $AWS s3 cp - s3://my-backups/db/202
 
 # ── Lambda ────────────────────────────────────────────────────────────────────
 echo "→ Lambda"
-
-# Minimal zip with a handler stub
 TMP=$(mktemp -d)
 for fn in api-handler data-processor auth-validator notification-sender; do
   cat > "$TMP/index.js" <<JS
@@ -60,7 +123,7 @@ $AWS sqs create-queue --queue-name orders \
   --attributes '{"RedrivePolicy":"{\"deadLetterTargetArn\":\"arn:aws:sqs:us-east-1:000000000000:orders-dlq\",\"maxReceiveCount\":\"3\"}","VisibilityTimeout":"30"}' >/dev/null
 $AWS sqs create-queue --queue-name notifications >/dev/null
 
-# ── SNS ───────────────────────────────────────────────────────────────────────
+# ── SNS (create-topic is idempotent — returns existing ARN) ───────────────────
 echo "→ SNS"
 ORDER_TOPIC=$($AWS sns create-topic --name order-events --query TopicArn --output text)
 ALERT_TOPIC=$($AWS sns create-topic --name alerts      --query TopicArn --output text)
@@ -75,7 +138,6 @@ $AWS sns subscribe \
   --topic-arn "$ORDER_TOPIC" \
   --protocol sqs \
   --notification-endpoint "$ORDERS_ARN" >/dev/null
-
 $AWS sns subscribe \
   --topic-arn "$ALERT_TOPIC" \
   --protocol email \
@@ -99,7 +161,7 @@ $AWS dynamodb create-table \
 $AWS dynamodb put-item --table-name users \
   --item '{"user_id":{"S":"u-001"},"name":{"S":"Alice"},"email":{"S":"alice@example.com"}}' >/dev/null
 $AWS dynamodb put-item --table-name users \
-  --item '{"user_id":{"S":"u-002"},"name":{"S":"Bob"},  "email":{"S":"bob@example.com"}}' >/dev/null
+  --item '{"user_id":{"S":"u-002"},"name":{"S":"Bob"},"email":{"S":"bob@example.com"}}' >/dev/null
 
 # ── Secrets Manager ───────────────────────────────────────────────────────────
 echo "→ Secrets Manager"
@@ -123,38 +185,141 @@ for fn in api-handler data-processor auth-validator notification-sender; do
 done
 $AWS logs create-log-group --log-group-name "/app/production" >/dev/null
 
-# ── EventBridge ───────────────────────────────────────────────────────────────
-echo "→ EventBridge"
-$AWS events create-event-bus --name app-events >/dev/null
-$AWS events put-rule \
-  --name OrderCreatedRule \
-  --event-bus-name app-events \
-  --event-pattern '{"source":["app.orders"],"detail-type":["OrderCreated"]}' \
-  --state ENABLED >/dev/null
+
+$AWS s3api put-bucket-versioning \
+  --bucket my-app-assets \
+  --versioning-configuration Status=Enabled >/dev/null
+
+echo '{"app":"lazyaws","version":"1.0.0"}' | $AWS s3 cp - s3://my-app-assets/config/app.json >/dev/null
+echo 'user_id,name,email'                  | $AWS s3 cp - s3://my-data-lake/exports/users.csv >/dev/null
+echo 'backup 2026-03-01'                   | $AWS s3 cp - s3://my-backups/db/2026-03-01.sql.gz >/dev/null
+echo 'backup 2026-03-15'                   | $AWS s3 cp - s3://my-backups/db/2026-03-15.sql.gz >/dev/null
+
+# ── Lambda ────────────────────────────────────────────────────────────────────
+echo "→ Lambda"
+TMP=$(mktemp -d)
+for fn in api-handler data-processor auth-validator notification-sender; do
+  cat > "$TMP/index.js" <<JS
+exports.handler = async (event) => ({ statusCode: 200, body: JSON.stringify({ fn: "$fn" }) });
+JS
+  (cd "$TMP" && zip -q handler.zip index.js)
+  $AWS lambda create-function \
+    --function-name "$fn" \
+    --runtime nodejs20.x \
+    --role arn:aws:iam::000000000000:role/lambda-role \
+    --handler index.handler \
+    --zip-file fileb://"$TMP/handler.zip" \
+    --environment "Variables={ENV=production,LOG_LEVEL=info}" \
+    --timeout 30 \
+    --memory-size 256 >/dev/null
+done
+rm -rf "$TMP"
+
+# ── SQS ───────────────────────────────────────────────────────────────────────
+echo "→ SQS"
+$AWS sqs create-queue --queue-name orders-dlq >/dev/null
+$AWS sqs create-queue --queue-name orders \
+  --attributes '{"RedrivePolicy":"{\"deadLetterTargetArn\":\"arn:aws:sqs:us-east-1:000000000000:orders-dlq\",\"maxReceiveCount\":\"3\"}","VisibilityTimeout":"30"}' >/dev/null
+$AWS sqs create-queue --queue-name notifications >/dev/null
+
+# ── SNS (create-topic is idempotent — returns existing ARN) ───────────────────
+echo "→ SNS"
+ORDER_TOPIC=$($AWS sns create-topic --name order-events --query TopicArn --output text)
+ALERT_TOPIC=$($AWS sns create-topic --name alerts      --query TopicArn --output text)
+
+ORDERS_URL=$($AWS sqs get-queue-url --queue-name orders --query QueueUrl --output text)
+ORDERS_ARN=$($AWS sqs get-queue-attributes \
+  --queue-url "$ORDERS_URL" \
+  --attribute-names QueueArn \
+  --query Attributes.QueueArn --output text)
+
+$AWS sns subscribe \
+  --topic-arn "$ORDER_TOPIC" \
+  --protocol sqs \
+  --notification-endpoint "$ORDERS_ARN" >/dev/null
+$AWS sns subscribe \
+  --topic-arn "$ALERT_TOPIC" \
+  --protocol email \
+  --notification-endpoint ops@example.com >/dev/null
+
+# ── DynamoDB ──────────────────────────────────────────────────────────────────
+echo "→ DynamoDB"
+$AWS dynamodb create-table \
+  --table-name users \
+  --attribute-definitions AttributeName=user_id,AttributeType=S \
+  --key-schema AttributeName=user_id,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST >/dev/null
+
+$AWS dynamodb create-table \
+  --table-name sessions \
+  --attribute-definitions AttributeName=session_id,AttributeType=S AttributeName=user_id,AttributeType=S \
+  --key-schema AttributeName=session_id,KeyType=HASH \
+  --global-secondary-indexes '[{"IndexName":"UserIndex","KeySchema":[{"AttributeName":"user_id","KeyType":"HASH"}],"Projection":{"ProjectionType":"ALL"}}]' \
+  --billing-mode PAY_PER_REQUEST >/dev/null
+
+$AWS dynamodb put-item --table-name users \
+  --item '{"user_id":{"S":"u-001"},"name":{"S":"Alice"},"email":{"S":"alice@example.com"}}' >/dev/null
+$AWS dynamodb put-item --table-name users \
+  --item '{"user_id":{"S":"u-002"},"name":{"S":"Bob"},"email":{"S":"bob@example.com"}}' >/dev/null
+
+# ── Secrets Manager ───────────────────────────────────────────────────────────
+echo "→ Secrets Manager"
+$AWS secretsmanager create-secret \
+  --name prod/db/password \
+  --secret-string '{"username":"app","password":"s3cr3t!"}' >/dev/null
+$AWS secretsmanager create-secret \
+  --name prod/stripe/api-key \
+  --secret-string 'sk_live_placeholder' >/dev/null
+$AWS secretsmanager create-secret \
+  --name prod/jwt/signing-key \
+  --secret-string 'super-secret-jwt-key-256-bits' >/dev/null
+
+# ── CloudWatch Logs ───────────────────────────────────────────────────────────
+echo "→ CloudWatch Logs"
+for fn in api-handler data-processor auth-validator notification-sender; do
+  $AWS logs create-log-group --log-group-name "/aws/lambda/$fn" >/dev/null
+  $AWS logs create-log-stream \
+    --log-group-name "/aws/lambda/$fn" \
+    --log-stream-name "2026/03/16/[\$LATEST]abc123" >/dev/null
+done
+$AWS logs create-log-group --log-group-name "/app/production" >/dev/null
 
 # ── Kinesis ───────────────────────────────────────────────────────────────────
 echo "→ Kinesis"
 $AWS kinesis create-stream --stream-name clickstream --shard-count 2 >/dev/null
 $AWS kinesis create-stream --stream-name audit-log   --shard-count 1 >/dev/null
 
-# ── API Gateway (HTTP API v2) ─────────────────────────────────────────────────
-echo "→ API Gateway"
-API_ID=$($AWS apigatewayv2 create-api \
+# ── API Gateway v1 (REST API) ─────────────────────────────────────────────────
+echo "→ API Gateway (REST)"
+API_ID=$($AWS apigateway create-rest-api \
   --name "lazyaws-demo-api" \
-  --protocol-type HTTP \
-  --query ApiId --output text)
+  --query 'id' --output text)
 
-$AWS apigatewayv2 create-stage \
-  --api-id "$API_ID" \
-  --stage-name production \
-  --auto-deploy >/dev/null
+ROOT_ID=$($AWS apigateway get-resources \
+  --rest-api-id "$API_ID" \
+  --query 'items[0].id' --output text)
 
-$AWS apigatewayv2 create-route \
-  --api-id "$API_ID" \
-  --route-key "GET /users" >/dev/null
-$AWS apigatewayv2 create-route \
-  --api-id "$API_ID" \
-  --route-key "POST /orders" >/dev/null
+USERS_ID=$($AWS apigateway create-resource \
+  --rest-api-id "$API_ID" \
+  --parent-id "$ROOT_ID" \
+  --path-part users \
+  --query 'id' --output text)
+$AWS apigateway put-method \
+  --rest-api-id "$API_ID" \
+  --resource-id "$USERS_ID" \
+  --http-method GET \
+  --authorization-type NONE >/dev/null
+
+ORDERS_ID=$($AWS apigateway create-resource \
+  --rest-api-id "$API_ID" \
+  --parent-id "$ROOT_ID" \
+  --path-part orders \
+  --query 'id' --output text)
+$AWS apigateway put-method \
+  --rest-api-id "$API_ID" \
+  --resource-id "$ORDERS_ID" \
+  --http-method POST \
+  --authorization-type NONE >/dev/null
 
 # ── CloudFormation ────────────────────────────────────────────────────────────
 echo "→ CloudFormation"
@@ -179,4 +344,4 @@ $AWS cloudformation create-stack \
   --parameters ParameterKey=Env,ParameterValue=production >/dev/null
 
 echo ""
-echo "✅ Seed complete. Run: go run . -local"
+echo "✅ Seed complete. Run: go run . -entrypoint-url http://localhost:4567"

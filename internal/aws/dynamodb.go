@@ -42,11 +42,11 @@ type DynamoDBProvider struct {
 	scanPage        int                                 // 1-based page number
 }
 
-func NewDynamoDBProvider(cfg awssdk.Config, local bool) *DynamoDBProvider {
+func NewDynamoDBProvider(cfg awssdk.Config, endpointURL string) *DynamoDBProvider {
 	var opts []func(*dynamodb.Options)
-	if local {
+	if endpointURL != "" {
 		opts = append(opts, func(o *dynamodb.Options) {
-			o.BaseEndpoint = awssdk.String("http://localhost:4566")
+			o.BaseEndpoint = awssdk.String(endpointURL)
 		})
 	}
 	return &DynamoDBProvider{client: dynamodb.NewFromConfig(cfg, opts...)}
