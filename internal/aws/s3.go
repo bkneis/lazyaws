@@ -92,6 +92,14 @@ func (p *S3Provider) GetDetail(ctx context.Context, item Item) (string, error) {
 	return p.tabOverview(ctx, item)
 }
 
+func (p *S3Provider) FetchItem(ctx context.Context, id string) (Item, error) {
+	_, err := p.client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{Bucket: awssdk.String(id)})
+	if err != nil {
+		return Item{}, fmt.Errorf("bucket not found: %w", err)
+	}
+	return Item{ID: id, Name: id}, nil
+}
+
 // SetSelectedObject records the currently selected S3 object for the Content tab.
 func (p *S3Provider) SetSelectedObject(key string, size int64) {
 	p.objectsMu.Lock()

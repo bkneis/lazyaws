@@ -52,6 +52,7 @@ type App struct {
 	preFocusIdx       int
 	tabBarOffsets     []int       // display-column start per tab (for mouse click)
 	tabLinks          [][]linkRef // per-tab extracted links, parallel to tabCache
+	tabRawCache       []string    // per-tab raw content before link marker stripping
 	navStack           []navState
 	selectedObjectRow  int
 	cachedObjects      []awspkg.S3ObjectItem
@@ -129,7 +130,9 @@ func (a *App) build() {
 		return action, event
 	})
 
-	// Wire mouse click on detail to select S3 object rows or DynamoDB item rows.
+	// Wire mouse click on detail to select S3 object rows, DynamoDB item rows,
+	// CW log stream rows, or follow cross-resource links on the clicked row.
+	// All left clicks are consumed to prevent spurious tab switching.
 	a.panels.detail.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
 		if action == tview.MouseLeftClick {
 			tabs := a.providers[a.activeProvider].Tabs()
@@ -177,6 +180,20 @@ func (a *App) build() {
 					return action, nil
 				}
 			}
+
+			// Generic: follow a cross-resource link on the clicked row.
+			if a.activeTab < len(a.tabRawCache) && a.tabRawCache[a.activeTab] != "" {
+				lines := strings.Split(a.tabRawCache[a.activeTab], "\n")
+				if contentRow >= 0 && contentRow < len(lines) {
+					if m := linkMarkerRe.FindStringSubmatch(lines[contentRow]); m != nil {
+						if parts := strings.SplitN(m[1], ":", 2); len(parts) == 2 {
+							a.navigateTo(parts[0], parts[1])
+						}
+					}
+				}
+			}
+
+			return action, nil // consume all left clicks — prevents spurious tab switching
 		}
 		return action, event
 	})
@@ -209,6 +226,7 @@ func (a *App) loadItems(i int, query string) {
 	a.selectedCWStreamRow = 0
 	a.tabLoaded = nil
 	a.tabCache = nil
+	a.tabRawCache = nil
 	a.loadedItems = nil
 	a.activeTab = 0
 	a.currentItem = awspkg.Item{}
@@ -298,6 +316,7 @@ func (a *App) selectItem(providerIdx int, item awspkg.Item) {
 	tabs := a.providers[providerIdx].Tabs()
 	a.tabLoaded = make([]bool, len(tabs))
 	a.tabCache = make([]string, len(tabs))
+	a.tabRawCache = make([]string, len(tabs))
 	a.tabLinks = make([][]linkRef, len(tabs))
 	a.loadTab(providerIdx, 0, item)
 }
@@ -320,6 +339,7 @@ func (a *App) loadTab(providerIdx, tabIdx int, item awspkg.Item) {
 				a.tabCache[tabIdx] = fmt.Sprintf("[red]Error: %v[-]", err)
 				a.tabLinks[tabIdx] = nil
 			} else {
+				a.tabRawCache[tabIdx] = content
 				cleaned, links := parseLinkContent(content)
 				a.tabCache[tabIdx] = cleaned
 				a.tabLinks[tabIdx] = links
@@ -732,6 +752,32 @@ func (a *App) navigateTo(providerName, targetID string) {
 		itemIdx:     a.panels.items.GetCurrentItem(),
 		tabIdx:      a.activeTab,
 	})
+
+	// Fast path: direct fetch if provider supports LinkNavigator.
+	if nav, ok := a.providers[targetProviderIdx].(awspkg.LinkNavigator); ok {
+		a.showStatusMessage("[yellow]navigating…[-]")
+		a.activeProvider = targetProviderIdx
+		go func() {
+			item, err := nav.FetchItem(context.Background(), targetID)
+			a.tapp.QueueUpdateDraw(func() {
+				if err != nil {
+					a.navStack = a.navStack[:len(a.navStack)-1]
+					a.showStatusMessage(fmt.Sprintf("[red]Navigation error: %v[-]", err))
+					return
+				}
+				a.loadedItems = []awspkg.Item{item}
+				a.panels.items.Clear()
+				a.panels.items.AddItem(item.Name, "", 0, func() {
+					a.selectItem(targetProviderIdx, item)
+				})
+				a.resetHints()
+				a.panels.resources.SetCurrentItem(targetProviderIdx)
+				a.panels.items.SetCurrentItem(0)
+				a.selectItem(targetProviderIdx, item)
+			})
+		}()
+		return
+	}
 
 	// If provider items not loaded, load them first
 	if a.activeProvider != targetProviderIdx || len(a.loadedItems) == 0 {

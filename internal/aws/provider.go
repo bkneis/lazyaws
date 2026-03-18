@@ -31,6 +31,13 @@ type Provider interface {
 	Tabs() []TabDef
 }
 
+// LinkNavigator is an optional capability a Provider may implement to fetch
+// a single resource directly by its ID, bypassing a full list scan.
+// navigateTo in the UI uses this when available.
+type LinkNavigator interface {
+	FetchItem(ctx context.Context, id string) (Item, error)
+}
+
 // ColorTags holds tview markup tags for color-rendering in provider output.
 // Set ActiveTags once at startup before the TUI starts.
 type ColorTags struct {

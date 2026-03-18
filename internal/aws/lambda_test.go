@@ -78,6 +78,37 @@ func (s *stubLambda) ListEventSourceMappings(_ context.Context, _ *lambda.ListEv
 	}, nil
 }
 
+func TestLambdaProvider_FetchItem(t *testing.T) {
+	p := awspkg.NewLambdaProviderWithClient(newStubLambda())
+
+	cases := []struct {
+		name    string
+		id      string
+		wantErr bool
+		wantID  string
+	}{
+		{"found", "my-function", false, "my-function"},
+		{"not found", "unknown-function", true, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			item, err := p.FetchItem(context.Background(), tc.id)
+			if tc.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if item.ID != tc.wantID || item.Name != tc.wantID {
+				t.Errorf("got ID=%q Name=%q, want both %q", item.ID, item.Name, tc.wantID)
+			}
+		})
+	}
+}
+
 func TestLambdaProvider_ListItems(t *testing.T) {
 	stub := &stubLambda{
 		functions: []lambdatypes.FunctionConfiguration{

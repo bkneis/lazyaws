@@ -86,6 +86,21 @@ func (p *APIGatewayProvider) GetDetail(ctx context.Context, item Item) (string, 
 	return p.tabOverview(ctx, item)
 }
 
+func (p *APIGatewayProvider) FetchItem(ctx context.Context, id string) (Item, error) {
+	v1out, err := p.v1.GetRestApi(ctx, &apigwv1.GetRestApiInput{RestApiId: awssdk.String(id)})
+	if err == nil && awssdk.ToString(v1out.Id) != "" {
+		name := fmt.Sprintf("%s (REST)", awssdk.ToString(v1out.Name))
+		return Item{ID: id, Name: name, Meta: map[string]string{"type": "REST"}}, nil
+	}
+	v2out, err2 := p.v2.GetApi(ctx, &apigwv2.GetApiInput{ApiId: awssdk.String(id)})
+	if err2 == nil && awssdk.ToString(v2out.ApiId) != "" {
+		apiType := strings.ToUpper(string(v2out.ProtocolType))
+		name := fmt.Sprintf("%s (%s)", awssdk.ToString(v2out.Name), apiType)
+		return Item{ID: id, Name: name, Meta: map[string]string{"type": apiType}}, nil
+	}
+	return Item{}, fmt.Errorf("API not found: %s", id)
+}
+
 func (p *APIGatewayProvider) Tabs() []TabDef {
 	return []TabDef{
 		{Label: "Overview", Fetch: p.tabOverview},

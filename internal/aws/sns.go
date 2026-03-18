@@ -51,6 +51,14 @@ func (p *SNSProvider) GetDetail(ctx context.Context, item Item) (string, error) 
 	return p.tabOverview(ctx, item)
 }
 
+func (p *SNSProvider) FetchItem(ctx context.Context, id string) (Item, error) {
+	_, err := p.client.GetTopicAttributes(ctx, &sns.GetTopicAttributesInput{TopicArn: awssdk.String(id)})
+	if err != nil {
+		return Item{}, fmt.Errorf("get topic attributes: %w", err)
+	}
+	return Item{ID: id, Name: arnLastSegment(id)}, nil
+}
+
 func (p *SNSProvider) Tabs() []TabDef {
 	return []TabDef{
 		{Label: "Overview", Fetch: p.tabOverview},

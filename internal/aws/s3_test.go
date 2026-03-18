@@ -252,6 +252,42 @@ func TestS3Provider_DownloadObject(t *testing.T) {
 	}
 }
 
+func TestS3Provider_FetchItem(t *testing.T) {
+	created := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	stub := &stubS3{
+		buckets:  []s3types.Bucket{{Name: aws.String("my-bucket"), CreationDate: &created}},
+		location: "eu-west-1",
+	}
+	p := awspkg.NewS3ProviderWithClient(stub)
+
+	cases := []struct {
+		name    string
+		id      string
+		wantErr bool
+		wantID  string
+	}{
+		{"found", "my-bucket", false, "my-bucket"},
+		{"not found", "missing-bucket", true, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			item, err := p.FetchItem(context.Background(), tc.id)
+			if tc.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if item.ID != tc.wantID || item.Name != tc.wantID {
+				t.Errorf("got ID=%q Name=%q, want both %q", item.ID, item.Name, tc.wantID)
+			}
+		})
+	}
+}
+
 func TestS3Provider_ContentTab(t *testing.T) {
 	stub := &stubS3{}
 	p := awspkg.NewS3ProviderWithClient(stub)

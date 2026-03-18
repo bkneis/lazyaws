@@ -50,6 +50,21 @@ func (p *SQSProvider) GetDetail(ctx context.Context, item Item) (string, error) 
 	return p.tabOverview(ctx, item)
 }
 
+func (p *SQSProvider) FetchItem(ctx context.Context, id string) (Item, error) {
+	_, err := p.client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl:       awssdk.String(id),
+		AttributeNames: []sqstypes.QueueAttributeName{sqstypes.QueueAttributeNameAll},
+	})
+	if err != nil {
+		return Item{}, fmt.Errorf("get queue attributes: %w", err)
+	}
+	name := id
+	if parts := strings.Split(id, "/"); len(parts) > 0 {
+		name = parts[len(parts)-1]
+	}
+	return Item{ID: id, Name: name}, nil
+}
+
 func (p *SQSProvider) Tabs() []TabDef {
 	return []TabDef{
 		{Label: "Overview", Fetch: p.tabOverview},

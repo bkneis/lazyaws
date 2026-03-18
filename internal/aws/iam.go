@@ -50,6 +50,15 @@ func (p *IAMProvider) GetDetail(ctx context.Context, item Item) (string, error) 
 	return p.tabOverview(ctx, item)
 }
 
+func (p *IAMProvider) FetchItem(ctx context.Context, id string) (Item, error) {
+	out, err := p.client.GetRole(ctx, &iam.GetRoleInput{RoleName: awssdk.String(id)})
+	if err != nil {
+		return Item{}, fmt.Errorf("get role: %w", err)
+	}
+	name := awssdk.ToString(out.Role.RoleName)
+	return Item{ID: name, Name: name}, nil
+}
+
 func (p *IAMProvider) Tabs() []TabDef {
 	return []TabDef{
 		{Label: "Overview", Fetch: p.tabOverview},

@@ -2,6 +2,7 @@ package aws_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +66,73 @@ func (s *stubSM) ListSecretVersionIds(_ context.Context, _ *secretsmanager.ListS
 			},
 		},
 	}, nil
+}
+
+// stubSMDescribeErr returns an error from DescribeSecret.
+type stubSMDescribeErr struct{ err error }
+
+func (s *stubSMDescribeErr) ListSecrets(_ context.Context, _ *secretsmanager.ListSecretsInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.ListSecretsOutput, error) {
+	return &secretsmanager.ListSecretsOutput{}, nil
+}
+
+func (s *stubSMDescribeErr) DescribeSecret(_ context.Context, _ *secretsmanager.DescribeSecretInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.DescribeSecretOutput, error) {
+	return nil, s.err
+}
+
+func (s *stubSMDescribeErr) GetSecretValue(_ context.Context, _ *secretsmanager.GetSecretValueInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
+	return &secretsmanager.GetSecretValueOutput{}, nil
+}
+
+func (s *stubSMDescribeErr) ListSecretVersionIds(_ context.Context, _ *secretsmanager.ListSecretVersionIdsInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.ListSecretVersionIdsOutput, error) {
+	return &secretsmanager.ListSecretVersionIdsOutput{}, nil
+}
+
+func TestSMProvider_FetchItem(t *testing.T) {
+	const arn = "arn:aws:secretsmanager:us-east-1:123456789:secret:prod/db-credentials-AbCdEf"
+
+	cases := []struct {
+		name     string
+		id       string
+		stub     awspkg.SMAPI
+		wantErr  bool
+		wantID   string
+		wantName string
+	}{
+		{
+			name:     "found",
+			id:       arn,
+			stub:     &stubSM{},
+			wantID:   arn,
+			wantName: "", // stubSM.DescribeSecret doesn't set Name
+		},
+		{
+			name:    "not found",
+			id:      "arn:aws:secretsmanager:us-east-1:123456789:secret:missing",
+			stub:    &stubSMDescribeErr{err: fmt.Errorf("secret not found")},
+			wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := awspkg.NewSMProviderWithClient(tc.stub)
+			item, err := p.FetchItem(context.Background(), tc.id)
+			if tc.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if item.ID != tc.wantID {
+				t.Errorf("got ID=%q, want %q", item.ID, tc.wantID)
+			}
+			if item.Name != tc.wantName {
+				t.Errorf("got Name=%q, want %q", item.Name, tc.wantName)
+			}
+		})
+	}
 }
 
 func TestSMProvider_ListItems(t *testing.T) {

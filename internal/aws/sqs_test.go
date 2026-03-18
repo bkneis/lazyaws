@@ -2,6 +2,7 @@ package aws_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -35,6 +36,63 @@ func (s *stubSQS) GetQueueAttributes(_ context.Context, _ *sqs.GetQueueAttribute
 		attrs[string(sqstypes.QueueAttributeNameRedrivePolicy)] = `{"deadLetterTargetArn":"arn:aws:sqs:us-east-1:123:order-dlq","maxReceiveCount":3}`
 	}
 	return &sqs.GetQueueAttributesOutput{Attributes: attrs}, nil
+}
+
+// stubSQSGetAttrErr returns an error from GetQueueAttributes.
+type stubSQSGetAttrErr struct{ err error }
+
+func (s *stubSQSGetAttrErr) ListQueues(_ context.Context, _ *sqs.ListQueuesInput, _ ...func(*sqs.Options)) (*sqs.ListQueuesOutput, error) {
+	return &sqs.ListQueuesOutput{}, nil
+}
+
+func (s *stubSQSGetAttrErr) GetQueueAttributes(_ context.Context, _ *sqs.GetQueueAttributesInput, _ ...func(*sqs.Options)) (*sqs.GetQueueAttributesOutput, error) {
+	return nil, s.err
+}
+
+func TestSQSProvider_FetchItem(t *testing.T) {
+	cases := []struct {
+		name     string
+		id       string
+		stub     awspkg.SQSAPI
+		wantErr  bool
+		wantID   string
+		wantName string
+	}{
+		{
+			name:     "found",
+			id:       "https://sqs.us-east-1.amazonaws.com/123456789/order-queue",
+			stub:     &stubSQS{},
+			wantID:   "https://sqs.us-east-1.amazonaws.com/123456789/order-queue",
+			wantName: "order-queue",
+		},
+		{
+			name:    "not found",
+			id:      "https://sqs.us-east-1.amazonaws.com/123456789/missing-queue",
+			stub:    &stubSQSGetAttrErr{err: fmt.Errorf("queue not found")},
+			wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := awspkg.NewSQSProviderWithClient(tc.stub)
+			item, err := p.FetchItem(context.Background(), tc.id)
+			if tc.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if item.ID != tc.wantID {
+				t.Errorf("got ID=%q, want %q", item.ID, tc.wantID)
+			}
+			if item.Name != tc.wantName {
+				t.Errorf("got Name=%q, want %q", item.Name, tc.wantName)
+			}
+		})
+	}
 }
 
 func TestSQSProvider_ListItems(t *testing.T) {

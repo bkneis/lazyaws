@@ -2,6 +2,7 @@ package aws_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +51,66 @@ func (s *stubIAM) ListRolePolicies(_ context.Context, _ *iam.ListRolePoliciesInp
 	return &iam.ListRolePoliciesOutput{
 		PolicyNames: []string{"inline-s3-read"},
 	}, nil
+}
+
+// stubIAMGetRoleErr returns an error from GetRole.
+type stubIAMGetRoleErr struct{ err error }
+
+func (s *stubIAMGetRoleErr) ListRoles(_ context.Context, _ *iam.ListRolesInput, _ ...func(*iam.Options)) (*iam.ListRolesOutput, error) {
+	return &iam.ListRolesOutput{}, nil
+}
+
+func (s *stubIAMGetRoleErr) GetRole(_ context.Context, _ *iam.GetRoleInput, _ ...func(*iam.Options)) (*iam.GetRoleOutput, error) {
+	return nil, s.err
+}
+
+func (s *stubIAMGetRoleErr) ListAttachedRolePolicies(_ context.Context, _ *iam.ListAttachedRolePoliciesInput, _ ...func(*iam.Options)) (*iam.ListAttachedRolePoliciesOutput, error) {
+	return &iam.ListAttachedRolePoliciesOutput{}, nil
+}
+
+func (s *stubIAMGetRoleErr) ListRolePolicies(_ context.Context, _ *iam.ListRolePoliciesInput, _ ...func(*iam.Options)) (*iam.ListRolePoliciesOutput, error) {
+	return &iam.ListRolePoliciesOutput{}, nil
+}
+
+func TestIAMProvider_FetchItem(t *testing.T) {
+	cases := []struct {
+		name    string
+		id      string
+		stub    awspkg.IAMAPI
+		wantErr bool
+		wantID  string
+	}{
+		{
+			name:    "found",
+			id:      "lambda-execution-role",
+			stub:    &stubIAM{},
+			wantID:  "lambda-execution-role",
+		},
+		{
+			name:    "not found",
+			id:      "missing-role",
+			stub:    &stubIAMGetRoleErr{err: fmt.Errorf("role not found")},
+			wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := awspkg.NewIAMProviderWithClient(tc.stub)
+			item, err := p.FetchItem(context.Background(), tc.id)
+			if tc.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if item.ID != tc.wantID || item.Name != tc.wantID {
+				t.Errorf("got ID=%q Name=%q, want both %q", item.ID, item.Name, tc.wantID)
+			}
+		})
+	}
 }
 
 func TestIAMProvider_ListItems(t *testing.T) {

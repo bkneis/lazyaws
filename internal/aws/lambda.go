@@ -54,6 +54,15 @@ func (p *LambdaProvider) GetDetail(ctx context.Context, item Item) (string, erro
 	return p.tabOverview(ctx, item)
 }
 
+func (p *LambdaProvider) FetchItem(ctx context.Context, id string) (Item, error) {
+	out, err := p.client.GetFunction(ctx, &lambda.GetFunctionInput{FunctionName: awssdk.String(id)})
+	if err != nil {
+		return Item{}, fmt.Errorf("get function: %w", err)
+	}
+	name := awssdk.ToString(out.Configuration.FunctionName)
+	return Item{ID: name, Name: name}, nil
+}
+
 func (p *LambdaProvider) Tabs() []TabDef {
 	return []TabDef{
 		{Label: "Overview", Fetch: p.tabOverview},

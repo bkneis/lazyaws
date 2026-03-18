@@ -266,6 +266,59 @@ func TestAPIGatewayProvider_TabStages_HTTP(t *testing.T) {
 	}
 }
 
+func TestAPIGatewayProvider_FetchItem(t *testing.T) {
+	p := newTestAPIGatewayProvider()
+
+	cases := []struct {
+		name     string
+		id       string
+		wantErr  bool
+		wantName string
+		wantType string
+	}{
+		{
+			name:     "V1 REST id",
+			id:       "rest-api-1",
+			wantName: "my-rest-api (REST)",
+			wantType: "REST",
+		},
+		{
+			name:     "V2 HTTP id",
+			id:       "api-http-1",
+			wantName: "my-http-api (HTTP)",
+			wantType: "HTTP",
+		},
+		{
+			name:    "both fail",
+			id:      "unknown-id",
+			wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			item, err := p.FetchItem(context.Background(), tc.id)
+			if tc.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if item.Name != tc.wantName {
+				t.Errorf("got Name=%q, want %q", item.Name, tc.wantName)
+			}
+			if item.Meta["type"] != tc.wantType {
+				t.Errorf("got Meta[type]=%q, want %q", item.Meta["type"], tc.wantType)
+			}
+			if item.ID != tc.id {
+				t.Errorf("got ID=%q, want %q", item.ID, tc.id)
+			}
+		})
+	}
+}
+
 func TestAPIGatewayProvider_TabStages_REST(t *testing.T) {
 	p := newTestAPIGatewayProvider()
 	tabs := p.Tabs()

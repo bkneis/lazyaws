@@ -50,6 +50,14 @@ func (p *SMProvider) GetDetail(ctx context.Context, item Item) (string, error) {
 	return p.tabOverview(ctx, item)
 }
 
+func (p *SMProvider) FetchItem(ctx context.Context, id string) (Item, error) {
+	out, err := p.client.DescribeSecret(ctx, &secretsmanager.DescribeSecretInput{SecretId: awssdk.String(id)})
+	if err != nil {
+		return Item{}, fmt.Errorf("describe secret: %w", err)
+	}
+	return Item{ID: awssdk.ToString(out.ARN), Name: awssdk.ToString(out.Name)}, nil
+}
+
 func (p *SMProvider) Tabs() []TabDef {
 	return []TabDef{
 		{Label: "Overview", Fetch: p.tabOverview},

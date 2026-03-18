@@ -2,6 +2,7 @@ package aws_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -48,6 +49,67 @@ func (s *stubSNS) ListSubscriptionsByTopic(_ context.Context, _ *sns.ListSubscri
 			},
 		},
 	}, nil
+}
+
+// stubSNSGetTopicErr returns an error from GetTopicAttributes and stubs others empty.
+type stubSNSGetTopicErr struct{ err error }
+
+func (s *stubSNSGetTopicErr) ListTopics(_ context.Context, _ *sns.ListTopicsInput, _ ...func(*sns.Options)) (*sns.ListTopicsOutput, error) {
+	return &sns.ListTopicsOutput{}, nil
+}
+
+func (s *stubSNSGetTopicErr) GetTopicAttributes(_ context.Context, _ *sns.GetTopicAttributesInput, _ ...func(*sns.Options)) (*sns.GetTopicAttributesOutput, error) {
+	return nil, s.err
+}
+
+func (s *stubSNSGetTopicErr) ListSubscriptionsByTopic(_ context.Context, _ *sns.ListSubscriptionsByTopicInput, _ ...func(*sns.Options)) (*sns.ListSubscriptionsByTopicOutput, error) {
+	return &sns.ListSubscriptionsByTopicOutput{}, nil
+}
+
+func TestSNSProvider_FetchItem(t *testing.T) {
+	cases := []struct {
+		name     string
+		id       string
+		stub     awspkg.SNSAPI
+		wantErr  bool
+		wantID   string
+		wantName string
+	}{
+		{
+			name:     "found",
+			id:       "arn:aws:sns:us-east-1:123456789:order-events",
+			stub:     &stubSNS{},
+			wantID:   "arn:aws:sns:us-east-1:123456789:order-events",
+			wantName: "order-events",
+		},
+		{
+			name:    "not found",
+			id:      "arn:aws:sns:us-east-1:123456789:missing-topic",
+			stub:    &stubSNSGetTopicErr{err: fmt.Errorf("topic not found")},
+			wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := awspkg.NewSNSProviderWithClient(tc.stub)
+			item, err := p.FetchItem(context.Background(), tc.id)
+			if tc.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if item.ID != tc.wantID {
+				t.Errorf("got ID=%q, want %q", item.ID, tc.wantID)
+			}
+			if item.Name != tc.wantName {
+				t.Errorf("got Name=%q, want %q", item.Name, tc.wantName)
+			}
+		})
+	}
 }
 
 func TestSNSProvider_ListItems(t *testing.T) {
