@@ -72,7 +72,11 @@ func Table(headers []string, rows [][]string) string {
 		sb.WriteString("  ")
 		for i, cell := range row {
 			if i < len(widths) {
-				fmt.Fprintf(&sb, "%-*s", widths[i]+2, cell)
+				sb.WriteString(cell)
+				pad := widths[i] + 2 - displayLen(cell)
+				if pad > 0 {
+					sb.WriteString(strings.Repeat(" ", pad))
+				}
 			}
 		}
 		sb.WriteString("\n")

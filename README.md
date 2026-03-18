@@ -61,6 +61,16 @@ AWS credentials are loaded from the standard chain (`AWS_*` environment variable
 | `r` | Refresh current resource list |
 | `q` | Quit |
 
+## Cool Features
+
+- S3 Explorer with ability to view text / json files and download items
+- DynamoDB viewer for easily inspecting JSON objects
+- Completely clickable TUI, no need to learn keyboard shortcuts if you don't want to
+- Cross resource linking, click underscored hyperlinks in resource lists to jump to that resouce
+- Single binary ~21mb that works across window, linux and mac 32/64bit
+- Point it at any AWS control plane such as localstack using --entrypoint-url
+- Doesn't require aws cli to be installed or use any porcelin command processing, entirely built using go aws sdk and uses your local authentication configured
+
 ## Supported Services
 
 | Service | Detail tabs |

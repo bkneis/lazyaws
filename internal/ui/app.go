@@ -119,13 +119,19 @@ func (a *App) build() {
 		AddItem(leftCol, 25, 0, true).
 		AddItem(a.panels.rightFlex, 0, 1, false)
 
-	// Wire tabBar mouse capture for clickable tabs
+	// Wire tabBar mouse capture for clickable tabs.
+	// Guard with a y-bounds check: tview's Flex passes events to all children in
+	// order until one signals consumed, so without the check the tabBar fires for
+	// every click in the right panel (detail included), switching tabs spuriously.
 	a.panels.tabBar.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
 		if action == tview.MouseLeftClick {
-			screenCol, _ := event.Position()            // screen-absolute column
-			widgetX, _, _, _ := a.panels.tabBar.GetRect() // widget's left edge on screen
+			screenCol, screenY := event.Position()
+			widgetX, widgetY, _, _ := a.panels.tabBar.GetRect()
+			if screenY != widgetY {
+				return action, event // click is below the tab bar — let detail handle it
+			}
 			a.selectTabByColumn(screenCol - widgetX)
-			return action, nil
+			return tview.MouseConsumed, nil
 		}
 		return action, event
 	})
@@ -150,7 +156,7 @@ func (a *App) build() {
 						a.panels.focused = 2
 						a.tapp.SetFocus(a.panels.detail)
 					}
-					return action, nil
+					return tview.MouseConsumed, nil
 				}
 			}
 
@@ -164,7 +170,7 @@ func (a *App) build() {
 						a.panels.focused = 2
 						a.tapp.SetFocus(a.panels.detail)
 					}
-					return action, nil
+					return tview.MouseConsumed, nil
 				}
 			}
 
@@ -177,7 +183,7 @@ func (a *App) build() {
 						a.panels.focused = 2
 						a.tapp.SetFocus(a.panels.detail)
 					}
-					return action, nil
+					return tview.MouseConsumed, nil
 				}
 			}
 
@@ -193,7 +199,7 @@ func (a *App) build() {
 				}
 			}
 
-			return action, nil // consume all left clicks — prevents spurious tab switching
+			return tview.MouseConsumed, nil // consume all left clicks
 		}
 		return action, event
 	})
