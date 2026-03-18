@@ -4,7 +4,7 @@ services:
     ports:
       - "4567:4566"
     environment:
-      - SERVICES=s3,lambda,sqs,sns,dynamodb,cloudformation,secretsmanager,apigateway,logs,events,iam,kinesis,stepfunctions,events,cloudwatch,acm
+      - SERVICES=s3,lambda,sqs,sns,dynamodb,cloudformation,secretsmanager,apigateway,logs,events,iam,kinesis,route53
       - DEFAULT_REGION=us-east-1
       - DEBUG=0
     volumes:
