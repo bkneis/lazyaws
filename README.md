@@ -51,18 +51,6 @@ lazyaws -local
 
 AWS credentials are loaded from the standard chain (`AWS_*` environment variables, `~/.aws/credentials`, IAM instance role, etc.).
 
-## Try it with LocalStack
-
-Spin up a fully-seeded local AWS environment in two commands:
-
-```bash
-docker compose up -d
-./scripts/seed.sh
-lazyaws -local
-```
-
-This seeds S3 buckets, Lambda functions, SQS queues, SNS topics, DynamoDB tables, Secrets Manager secrets, a CloudFormation stack, CloudWatch log groups, Kinesis streams, an API Gateway HTTP API, and EventBridge rules — enough to explore every provider.
-
 ## Keybindings
 
 | Key | Action |
@@ -103,56 +91,21 @@ This seeds S3 buckets, Lambda functions, SQS queues, SNS topics, DynamoDB tables
 | Elastic Load Balancers | Overview, Listeners, Target groups |
 | Auto Scaling Groups | Overview, Instances |
 
-## Contributing a New Service
+## Contributing
 
-Each AWS service is a self-contained file in `internal/aws/` that implements the `Provider` interface:
+I'd welcome any contrubtions from the community, if anyone wants to suggest/implement new features or integrate AWS services then please read CONTRUBTING.md and submit a PR :)
 
-```go
-type Provider interface {
-    Name() string
-    ListItems(ctx context.Context) ([]Item, error)
-    GetDetail(ctx context.Context, item Item) (string, error)
-    Tabs() []TabDef
-}
-```
+### Features for v2
 
-### Steps
+Some features I would like personally and will try to implement when I have time:
 
-1. **Create `internal/aws/<service>.go`**
-
-   Define a narrow interface over the SDK client, implement `Provider`, and expose two constructors:
-   - `New<Service>Provider(cfg aws.Config, local bool) *<Service>Provider`
-   - `New<Service>ProviderWithClient(client <Service>API) *<Service>Provider`
-
-   Use `KV()` for key-value output and `Table()` for tabular output (both in `format.go`).
-
-2. **Register in `main.go`**
-
-   Append `awspkg.New<Service>Provider(cfg, *local)` to the `providers` slice.
-
-3. **Add the SDK dependency if needed**
-
-   ```bash
-   go get github.com/aws/aws-sdk-go-v2/service/<service>
-   ```
-
-4. **Write tests**
-
-   Implement the narrow interface directly in the test file and use table-driven tests. See `s3_test.go` or `lambda_test.go` as reference.
-
-### Prompt for Claude Code
-
-```
-Add a lazyaws provider for <ServiceName>.
-
-List items using <ListAPI>, with ID=<id field> and Name=<name field>.
-
-Tabs:
-- Overview: show <field1>, <field2>, ... using KV()
-- <TabName>: show <what> using Table() with columns <col1>, <col2>, ...
-
-Follow the existing pattern in internal/aws/s3.go exactly.
-```
+ - Integrate Gonzo into cloudwatch logs so multiple log streams can be selected then opened in gonzo
+ - Add RDS page with a shell tab that allows instances with IAM auth to login to a DB shell
+ - SAM Dashboards showing lambda invokations and basic monitoring
+ - Cross page linking so resources can link to each other, e.g. cloudformation resources linking to a s3 bucket that opens in S3 panel
+ - Allow copying info from details panel
+ - Page down when getting to the bottom of items
+ - Allow users to specify which services should show and by AWS region
 
 ## License
 

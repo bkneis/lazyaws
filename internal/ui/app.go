@@ -136,7 +136,7 @@ func (a *App) build() {
 			_, screenY := event.Position()
 			_, widgetY, _, _ := a.panels.detail.GetRect()
 			scrollRow, _ := a.panels.detail.GetScrollOffset()
-			contentRow := (screenY - widgetY - 1) + scrollRow // -1 for border
+			contentRow := (screenY - widgetY) + scrollRow
 
 			if _, ok := a.providers[a.activeProvider].(*awspkg.S3Provider); ok {
 				if a.activeTab < len(tabs) && tabs[a.activeTab].Label == "Objects" && len(a.cachedObjects) > 0 {
@@ -350,6 +350,9 @@ func (a *App) loadTab(providerIdx, tabIdx int, item awspkg.Item) {
 			}
 			if a.activeTab == tabIdx {
 				a.renderDetail()
+				if a.panels.detail.HasFocus() {
+					a.tapp.Sync() // force full terminal resync to fix left-panel rendering artifacts when detail is focused
+				}
 			}
 		})
 	}()

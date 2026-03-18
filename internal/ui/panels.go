@@ -42,13 +42,14 @@ func newPanels(t Theme) *panels {
 		SetDynamicColors(true).
 		SetScrollable(true).
 		SetWrap(false)
-	detail.SetBorder(true).SetTitle(" Detail ")
-	detail.SetFocusFunc(func() { detail.SetBorderColor(fc) }).
-		SetBlurFunc(func() { detail.SetBorderColor(tcell.ColorDefault) })
 
 	rightFlex := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tabBar, 1, 0, false).
 		AddItem(detail, 0, 1, false)
+	rightFlex.SetBorder(true).SetBorderColor(tcell.ColorDefault)
+
+	detail.SetFocusFunc(func() { rightFlex.SetBorderColor(fc) }).
+		SetBlurFunc(func() { rightFlex.SetBorderColor(tcell.ColorDefault) })
 
 	hints := t.HeaderTag + "Tab[-]/" + t.HeaderTag + "S-Tab[-]: panel   " +
 		t.HeaderTag + "j/k[-]: navigate   " +

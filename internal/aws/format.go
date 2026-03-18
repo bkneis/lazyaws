@@ -80,6 +80,12 @@ func Table(headers []string, rows [][]string) string {
 	return sb.String()
 }
 
+// tviewEscape escapes square brackets in raw text so tview does not interpret
+// them as color/style tags when SetDynamicColors(true) is active.
+func tviewEscape(s string) string {
+	return strings.ReplaceAll(s, "[", "[[]")
+}
+
 // IsSensitiveKey returns true if the key name suggests a sensitive value
 // (contains password, secret, token, or key — case-insensitive).
 func IsSensitiveKey(k string) bool {

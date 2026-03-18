@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -254,21 +253,23 @@ func (p *S3Provider) tabContent(ctx context.Context, item Item) (string, error) 
 	header := "  " + ActiveTags.Header + key + "[-]\n\n"
 	if strings.HasSuffix(strings.ToLower(key), ".json") {
 		if formatted, err := formatJSON(buf.String()); err == nil {
-			return header + formatted, nil
+			return header + tviewEscape(formatted), nil
 		}
 	}
-	return header + buf.String(), nil
+	return header + tviewEscape(buf.String()), nil
 }
 
-// formatJSON pretty-prints JSON using jq, falling back to raw on error.
+// formatJSON pretty-prints JSON using encoding/json.
 func formatJSON(raw string) (string, error) {
-	cmd := exec.Command("jq", ".")
-	cmd.Stdin = strings.NewReader(raw)
-	out, err := cmd.Output()
+	var v any
+	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+		return "", err
+	}
+	b, err := json.MarshalIndent(v, "  ", "  ")
 	if err != nil {
 		return "", err
 	}
-	return string(out), nil
+	return "  " + string(b) + "\n", nil
 }
 
 func FormatSize(bytes int64) string {
