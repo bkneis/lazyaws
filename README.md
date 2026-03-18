@@ -105,19 +105,6 @@ AWS credentials are loaded from the standard chain (`AWS_*` environment variable
 
 I'd welcome any contrubtions from the community, if anyone wants to suggest/implement new features or integrate AWS services then please read CONTRUBTING.md and submit a PR :)
 
-### Features for v1
-
-Some features I would like personally and will try to implement when I have time:
-
- - Integrate Gonzo into cloudwatch logs so multiple log streams can be selected then opened in gonzo
- - Add RDS page with a shell tab that allows instances with IAM auth to login to a DB shell
- - SAM Dashboards showing lambda invokations and basic monitoring
- - Cross page linking so resources can link to each other, e.g. cloudformation resources linking to a s3 bucket that opens in S3 panel
- - Allow copying info from details panel
- - Page down and lazy load next page when getting to the bottom of items??
- - Allow users to specify which services should show and by AWS region
- - Allow users to specify global pattern on names or tags to only show those resources
-
 ## License
 
 [MIT](LICENSE) © bkneis

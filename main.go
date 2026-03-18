@@ -55,6 +55,7 @@ func main() {
 		awspkg.NewEC2ImagesProvider(cfg, endpointURL),
 		awspkg.NewELBProvider(cfg, endpointURL),
 		awspkg.NewASGProvider(cfg, endpointURL),
+		awspkg.NewRDSProvider(cfg, endpointURL),
 	}
 
 	app := ui.NewApp(providers, theme)

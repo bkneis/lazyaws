@@ -25,6 +25,7 @@ var cfnTypeToProvider = map[string]string{
 type CFAPI interface {
 	DescribeStacks(ctx context.Context, in *cloudformation.DescribeStacksInput, opts ...func(*cloudformation.Options)) (*cloudformation.DescribeStacksOutput, error)
 	ListStackResources(ctx context.Context, in *cloudformation.ListStackResourcesInput, opts ...func(*cloudformation.Options)) (*cloudformation.ListStackResourcesOutput, error)
+	DescribeStackEvents(ctx context.Context, in *cloudformation.DescribeStackEventsInput, opts ...func(*cloudformation.Options)) (*cloudformation.DescribeStackEventsOutput, error)
 }
 
 type CFProvider struct{ client CFAPI }
@@ -64,6 +65,7 @@ func (p *CFProvider) Tabs() []TabDef {
 		{Label: "Resources", Fetch: p.tabResources},
 		{Label: "Outputs", Fetch: p.tabOutputs},
 		{Label: "Parameters", Fetch: p.tabParameters},
+		{Label: "Events", Fetch: p.tabEvents},
 	}
 }
 
@@ -129,6 +131,31 @@ func (p *CFProvider) tabOutputs(ctx context.Context, item Item) (string, error) 
 		pairs[i] = [2]string{awssdk.ToString(o.OutputKey), awssdk.ToString(o.OutputValue)}
 	}
 	return KV(pairs), nil
+}
+
+func (p *CFProvider) tabEvents(ctx context.Context, item Item) (string, error) {
+	out, err := p.client.DescribeStackEvents(ctx, &cloudformation.DescribeStackEventsInput{StackName: awssdk.String(item.ID)})
+	if err != nil {
+		return "", err
+	}
+	if len(out.StackEvents) == 0 {
+		return "  (no events)\n", nil
+	}
+	rows := make([][]string, len(out.StackEvents))
+	for i, e := range out.StackEvents {
+		ts := ""
+		if e.Timestamp != nil {
+			ts = e.Timestamp.Format(time.DateTime)
+		}
+		rows[i] = []string{
+			ts,
+			awssdk.ToString(e.LogicalResourceId),
+			awssdk.ToString(e.ResourceType),
+			string(e.ResourceStatus),
+			awssdk.ToString(e.ResourceStatusReason),
+		}
+	}
+	return Table([]string{"Time", "Resource", "Type", "Status", "Reason"}, rows), nil
 }
 
 func (p *CFProvider) tabParameters(ctx context.Context, item Item) (string, error) {
