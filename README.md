@@ -29,7 +29,7 @@ The AWS CLI is powerful but slow for exploratory workflows. Finding a Lambda's e
 
 `lazyaws` puts all of that in a three-panel TUI you can navigate in seconds — no flags to remember, no context-switching to the browser console.
 
-It pairs naturally with **LocalStack-based development**: run `lazyaws -local` alongside `docker compose up` to inspect your emulated AWS environment in real time, the same way you'd use `lazydocker` to inspect containers. It also works as a lightweight **read-only monitoring tool** against real AWS environments.
+It pairs naturally with **LocalStack-based development**: run `lazyaws -local` or `lazyaws -entrypoint-url=<aws control plane>` to inspect your emulated AWS environment in real time, the same way you'd use `lazydocker` to inspect containers. It also works great as a lightweight **read-only monitoring tool** against real AWS environments with fast grep like search, without the need to be loading any static assets.
 
 ## Install
 
@@ -68,7 +68,7 @@ AWS credentials are loaded from the standard chain (`AWS_*` environment variable
 - DynamoDB viewer for easily inspecting JSON objects
 - Completely clickable TUI, no need to learn keyboard shortcuts if you don't want to
 - Cross resource linking, click underscored hyperlinks in resource lists to jump to that resouce
-- Single binary ~21mb that works across window, linux and mac 32/64bit
+- Single binary ~28mb that works across window, linux and mac 32/64bit
 - Point it at any AWS control plane such as localstack using --entrypoint-url
 - Doesn't require aws cli to be installed or use any porcelin command processing, entirely built using go aws sdk and uses your local authentication configured
 
