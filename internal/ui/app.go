@@ -116,7 +116,7 @@ func (a *App) build() {
 		AddItem(a.panels.items, 0, 2, false)
 
 	layout := tview.NewFlex().
-		AddItem(leftCol, 25, 0, true).
+		AddItem(leftCol, 38, 0, true).
 		AddItem(a.panels.rightFlex, 0, 1, false)
 
 	// Wire tabBar mouse capture for clickable tabs.
