@@ -4,8 +4,9 @@
 
 <p align="center">
   A terminal UI for managing AWS resources — inspired by
-  <a href="https://github.com/jesseduffield/lazygit">lazygit</a> and
-  <a href="https://github.com/jesseduffield/lazydocker">lazydocker</a>.
+  <a href="https://github.com/jesseduffield/lazydocker">lazydocker</a>, 
+  <a href="https://github.com/derailed/k9s">k9s</a> and 
+  <a href="https://github.com/jesseduffield/lazygit">lazygit</a>.
 </p>
 
 <p align="center">
@@ -24,7 +25,7 @@
 
 ---
 
-The aim of this project is to make it easier to navigate, observe and manage your infrastucture, whether in the wild or locally during the development.
+The aim of this project is to make it easier to navigate, observe and manage your infrastucture, whether in the wild or locally during development.
 
 ## Why
 
@@ -33,6 +34,8 @@ The AWS CLI is powerful but slow for exploratory workflows. Finding a Lambda's e
 `lazyaws` puts all of that in a three-panel TUI you can navigate in seconds — no flags to remember, no context-switching to the browser console and waiting for static assets to load.
 
 It pairs naturally with **LocalStack-based development**: run `lazyaws -local` or `lazyaws -entrypoint-url=<aws control plane>` to inspect your emulated AWS environment in real time, the same way you'd use `lazydocker` to inspect containers.
+
+My typicaly workflow while using AI tools like claude include providing verification loops such as restarting a localstack container and re deploying cloudformation templates to fix infrastructure issues. With lazyaws, you can easily observe this in real time while the agent is working. Or if an integration test fails, and leaves the resources deployed, it can be inspected quickly and easily without leaving the terminal.
 
 ## Install
 
@@ -98,6 +101,12 @@ AWS credentials are loaded from the standard chain (`AWS_*` environment variable
 - Completely clickable TUI, no need to learn keyboard shortcuts if you don't want to
 - Single binary ~28mb that works across window, linux and mac 32/64bit
 - Doesn't require aws cli to be installed or use any porcelin command processing, entirely built using go aws sdk and uses your local authentication configured
+
+---
+
+If you find this useful, consider giving it a ⭐ — it helps others discover the project.
+
+---
 
 ## Keybindings
 
