@@ -18,6 +18,7 @@ type CloudWatchLogsAPI interface {
 	DescribeLogGroups(ctx context.Context, in *cloudwatchlogs.DescribeLogGroupsInput, opts ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.DescribeLogGroupsOutput, error)
 	DescribeLogStreams(ctx context.Context, in *cloudwatchlogs.DescribeLogStreamsInput, opts ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.DescribeLogStreamsOutput, error)
 	GetLogEvents(ctx context.Context, in *cloudwatchlogs.GetLogEventsInput, opts ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetLogEventsOutput, error)
+	FilterLogEvents(ctx context.Context, in *cloudwatchlogs.FilterLogEventsInput, opts ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.FilterLogEventsOutput, error)
 	// OpenLiveTailStream starts a live tail session and returns the event stream reader.
 	// It abstracts StartLiveTailOutput.GetStream() so the interface is directly testable.
 	OpenLiveTailStream(ctx context.Context, groups []string) (cloudwatchlogs.StartLiveTailResponseStreamReader, error)
@@ -45,6 +46,10 @@ func (a *cwlClientAdapter) DescribeLogStreams(ctx context.Context, in *cloudwatc
 
 func (a *cwlClientAdapter) GetLogEvents(ctx context.Context, in *cloudwatchlogs.GetLogEventsInput, opts ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetLogEventsOutput, error) {
 	return a.client.GetLogEvents(ctx, in, opts...)
+}
+
+func (a *cwlClientAdapter) FilterLogEvents(ctx context.Context, in *cloudwatchlogs.FilterLogEventsInput, opts ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.FilterLogEventsOutput, error) {
+	return a.client.FilterLogEvents(ctx, in, opts...)
 }
 
 func (a *cwlClientAdapter) OpenLiveTailStream(ctx context.Context, groups []string) (cloudwatchlogs.StartLiveTailResponseStreamReader, error) {
@@ -275,34 +280,58 @@ func (p *CloudWatchLogsProvider) tailGroup(ctx context.Context, group string, on
 	}
 }
 
-// StartTailGroups tails multiple log groups simultaneously via StartLiveTail.
+// StartTailGroups tails multiple log groups simultaneously using FilterLogEvents polling.
+// It seeds with the last 5 minutes of history so events written before tailing starts
+// are visible — unlike StartLiveTail which is real-time only and unsupported by LocalStack.
 func (p *CloudWatchLogsProvider) StartTailGroups(ctx context.Context, groups []string, onEvent func(ts int64, group, stream, msg string)) error {
-	reader, err := p.client.OpenLiveTailStream(ctx, groups)
-	if err != nil {
-		return err
+	var wg sync.WaitGroup
+	for _, group := range groups {
+		wg.Add(1)
+		go func(g string) {
+			defer wg.Done()
+			p.pollGroupEvents(ctx, g, onEvent)
+		}(group)
 	}
-	defer reader.Close()
+	wg.Wait()
+	return nil
+}
+
+// pollGroupEvents polls a single log group via FilterLogEvents, seeding with the
+// last 5 minutes of history then continuing to poll every 5 seconds for new events.
+func (p *CloudWatchLogsProvider) pollGroupEvents(ctx context.Context, group string, onEvent func(ts int64, group, stream, msg string)) {
+	// cursor is the exclusive lower bound (ms); advance past each event we emit.
+	cursor := time.Now().Add(-5 * time.Minute).UnixMilli()
+
+	poll := func() {
+		out, err := p.client.FilterLogEvents(ctx, &cloudwatchlogs.FilterLogEventsInput{
+			LogGroupName: awssdk.String(group),
+			StartTime:    awssdk.Int64(cursor),
+		})
+		if err != nil {
+			log.Printf("pollGroupEvents error (group=%s): %v", group, err)
+			return
+		}
+		for _, e := range out.Events {
+			ts := int64(0)
+			if e.Timestamp != nil {
+				ts = *e.Timestamp
+			}
+			onEvent(ts, group, awssdk.ToString(e.LogStreamName), strings.TrimRight(awssdk.ToString(e.Message), "\n"))
+			if ts >= cursor {
+				cursor = ts + 1
+			}
+		}
+	}
+
+	poll() // seed with recent history
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
-		case event, ok := <-reader.Events():
-			if !ok {
-				return reader.Err()
-			}
-			if ev, ok := event.(*cwltypes.StartLiveTailResponseStreamMemberSessionUpdate); ok {
-				for _, le := range ev.Value.SessionResults {
-					ts := int64(0)
-					if le.Timestamp != nil {
-						ts = *le.Timestamp
-					}
-					onEvent(ts,
-						awssdk.ToString(le.LogGroupIdentifier),
-						awssdk.ToString(le.LogStreamName),
-						strings.TrimRight(awssdk.ToString(le.Message), "\n"),
-					)
-				}
-			}
+			return
+		case <-ticker.C:
+			poll()
 		}
 	}
 }

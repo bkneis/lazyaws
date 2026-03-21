@@ -14,10 +14,11 @@ import (
 
 // stubCWLogs implements CloudWatchLogsAPI for testing.
 type stubCWLogs struct {
-	logGroups   []cwltypes.LogGroup
-	logStreams   []cwltypes.LogStream
-	logEvents   []cwltypes.OutputLogEvent
-	tailUpdates []cwltypes.LiveTailSessionUpdate
+	logGroups    []cwltypes.LogGroup
+	logStreams    []cwltypes.LogStream
+	logEvents    []cwltypes.OutputLogEvent
+	filterEvents []cwltypes.FilteredLogEvent
+	tailUpdates  []cwltypes.LiveTailSessionUpdate
 }
 
 func (s *stubCWLogs) DescribeLogGroups(_ context.Context, _ *cloudwatchlogs.DescribeLogGroupsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.DescribeLogGroupsOutput, error) {
@@ -30,6 +31,10 @@ func (s *stubCWLogs) DescribeLogStreams(_ context.Context, _ *cloudwatchlogs.Des
 
 func (s *stubCWLogs) GetLogEvents(_ context.Context, _ *cloudwatchlogs.GetLogEventsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetLogEventsOutput, error) {
 	return &cloudwatchlogs.GetLogEventsOutput{Events: s.logEvents}, nil
+}
+
+func (s *stubCWLogs) FilterLogEvents(_ context.Context, _ *cloudwatchlogs.FilterLogEventsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.FilterLogEventsOutput, error) {
+	return &cloudwatchlogs.FilterLogEventsOutput{Events: s.filterEvents}, nil
 }
 
 func (s *stubCWLogs) OpenLiveTailStream(_ context.Context, _ []string) (cloudwatchlogs.StartLiveTailResponseStreamReader, error) {
@@ -220,6 +225,40 @@ func TestCWLogsProvider_StartTail(t *testing.T) {
 		}
 		if got[0].msg != "hello world" {
 			t.Errorf("msg = %q, want \"hello world\"", got[0].msg)
+		}
+	})
+
+	t.Run("multi-group tail via FilterLogEvents", func(t *testing.T) {
+		stub := &stubCWLogs{
+			filterEvents: []cwltypes.FilteredLogEvent{
+				{
+					Timestamp:     &ts,
+					LogStreamName: aws.String("stream-1"),
+					Message:       aws.String("multi event\n"),
+				},
+			},
+		}
+		p := awspkg.NewCloudWatchLogsProviderWithClient(stub)
+
+		// Cancel immediately so poll() seeds once then the goroutine exits.
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		var got []event
+		err := p.StartTailGroups(ctx, []string{"/aws/lambda/my-func"}, func(ts int64, group, stream, msg string) {
+			got = append(got, event{ts, group, stream, msg})
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("got %d events, want 1", len(got))
+		}
+		if got[0].msg != "multi event" {
+			t.Errorf("msg = %q, want \"multi event\"", got[0].msg)
+		}
+		if got[0].group != "/aws/lambda/my-func" {
+			t.Errorf("group = %q, want /aws/lambda/my-func", got[0].group)
 		}
 	})
 
