@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"fmt"
 	"strconv"
 	"time"
@@ -55,7 +56,10 @@ func (p *EC2VolumesProvider) ListItems(ctx context.Context, query string) ([]Ite
 			if name == "" {
 				name = id
 			}
-			volJSON, _ := json.Marshal(vol)
+			volJSON, jsonErr := json.Marshal(vol)
+			if jsonErr != nil {
+				log.Printf("warn: marshal volume %s: %v", id, jsonErr)
+			}
 			items = append(items, Item{
 				ID:   id,
 				Name: name,

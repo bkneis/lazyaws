@@ -12,6 +12,7 @@ func TestLoadConfig_returnsValidConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// A valid config must have a region or at least not panic on use.
-	_ = cfg
+	if cfg.Region == "" {
+		t.Skip("no AWS region configured; skipping config test")
+	}
 }

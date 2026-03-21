@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"regexp"
@@ -340,11 +341,12 @@ func (a *App) loadTab(providerIdx, tabIdx int, item awspkg.Item) {
 	}
 	a.renderDetail() // show "... fetching" immediately
 
+	itemID := item.ID
 	go func() {
 		content, err := tabs[tabIdx].Fetch(context.Background(), item)
 		a.tapp.QueueUpdateDraw(func() {
-			if a.activeProvider != providerIdx {
-				return // provider changed while fetch was in-flight
+			if a.activeProvider != providerIdx || a.currentItem.ID != itemID {
+				return // provider or item changed while fetch was in-flight
 			}
 			if err != nil {
 				a.tabCache[tabIdx] = fmt.Sprintf("[red]Error: %v[-]", err)
@@ -958,7 +960,11 @@ func (a *App) startCWTailStream() {
 	if len(a.cwTailGroups) > 0 {
 		groups := a.cwTailGroups
 		go func() {
-			cwlp.StartTailGroups(ctx, groups, appendEvent) //nolint:errcheck
+			if err := cwlp.StartTailGroups(ctx, groups, appendEvent); err != nil {
+				a.tapp.QueueUpdateDraw(func() {
+					a.showStatusMessage(fmt.Sprintf("[red]Tail error: %v[-]", err))
+				})
+			}
 		}()
 		return
 	}
@@ -969,7 +975,11 @@ func (a *App) startCWTailStream() {
 		stream = a.cachedCWLogStreams[a.selectedCWStreamRow].Name
 	}
 	go func() {
-		cwlp.StartTail(ctx, group, stream, appendEvent) //nolint:errcheck
+		if err := cwlp.StartTail(ctx, group, stream, appendEvent); err != nil {
+			a.tapp.QueueUpdateDraw(func() {
+				a.showStatusMessage(fmt.Sprintf("[red]Tail error: %v[-]", err))
+			})
+		}
 	}()
 }
 
@@ -1073,15 +1083,18 @@ func (a *App) openInGonzo() {
 	a.tapp.Suspend(func() {
 		if err := cmd.Start(); err != nil {
 			cancel()
+			stdin.Close()
 			return
 		}
 		go func() {
-			cwlp.StartTail(ctx, group, "", func(_ int64, _, _, msg string) { //nolint:errcheck
-				fmt.Fprintln(stdin, msg)
+			cwlp.StartTail(ctx, group, "", func(_ int64, _, _, msg string) {
+				fmt.Fprintln(stdin, msg) //nolint:errcheck
 			})
 			stdin.Close()
 		}()
-		cmd.Wait() //nolint:errcheck
+		if err := cmd.Wait(); err != nil {
+			log.Printf("gonzo exited: %v", err)
+		}
 		cancel()
 	})
 }

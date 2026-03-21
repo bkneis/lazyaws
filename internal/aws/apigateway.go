@@ -28,8 +28,9 @@ type APIGatewayV1API interface {
 }
 
 type APIGatewayProvider struct {
-	v2 APIGatewayV2API
-	v1 APIGatewayV1API
+	v2     APIGatewayV2API
+	v1     APIGatewayV1API
+	region string
 }
 
 func NewAPIGatewayProvider(cfg awssdk.Config, endpointURL string) *APIGatewayProvider {
@@ -40,8 +41,9 @@ func NewAPIGatewayProvider(cfg awssdk.Config, endpointURL string) *APIGatewayPro
 		optsV1 = append(optsV1, func(o *apigwv1.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
 	return &APIGatewayProvider{
-		v2: apigwv2.NewFromConfig(cfg, optsV2...),
-		v1: apigwv1.NewFromConfig(cfg, optsV1...),
+		v2:     apigwv2.NewFromConfig(cfg, optsV2...),
+		v1:     apigwv1.NewFromConfig(cfg, optsV1...),
+		region: cfg.Region,
 	}
 }
 
@@ -137,7 +139,7 @@ func (p *APIGatewayProvider) tabOverview(ctx context.Context, item Item) (string
 	return KV([][2]string{
 		{"API ID", awssdk.ToString(out.Id)},
 		{"Type", "REST"},
-		{"Endpoint", fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com", awssdk.ToString(out.Id), "us-east-1")},
+		{"Endpoint", fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com", awssdk.ToString(out.Id), p.region)},
 		{"Created", created},
 	}), nil
 }

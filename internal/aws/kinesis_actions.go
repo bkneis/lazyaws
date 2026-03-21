@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -30,12 +31,13 @@ func (p *KinesisProvider) Actions(item Item) []ActionDef {
 				ac.PromptInput("Stream name", "", func(name string) {
 					ac.PromptInput("Shard count", "1", func(shardStr string) {
 						go func() {
-							shards, _ := strconv.ParseInt(shardStr, 10, 32)
-							if shards <= 0 {
-								shards = 1
+							shards, err := strconv.ParseInt(shardStr, 10, 32)
+							if err != nil || shards <= 0 {
+								ac.ShowError(fmt.Errorf("invalid shard count %q: must be a positive integer", shardStr))
+								return
 							}
 							n := int32(shards)
-							_, err := wc.CreateStream(context.Background(), &kinesis.CreateStreamInput{
+							_, err = wc.CreateStream(context.Background(), &kinesis.CreateStreamInput{
 								StreamName: awssdk.String(name),
 								ShardCount: &n,
 							})

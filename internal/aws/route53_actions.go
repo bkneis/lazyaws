@@ -129,11 +129,12 @@ func (p *Route53Provider) Actions(item Item) []ActionDef {
 						ac.PromptInput("TTL (seconds)", "300", func(ttlStr string) {
 							ac.PromptInput("Value", "", func(value string) {
 								go func() {
-									ttl, _ := strconv.ParseInt(ttlStr, 10, 64)
-									if ttl <= 0 {
-										ttl = 300
+									ttl, err := strconv.ParseInt(ttlStr, 10, 64)
+									if err != nil || ttl <= 0 {
+										ac.ShowError(fmt.Errorf("invalid TTL %q: must be a positive integer", ttlStr))
+										return
 									}
-									_, err := wc.ChangeResourceRecordSets(context.Background(), &route53.ChangeResourceRecordSetsInput{
+									_, err = wc.ChangeResourceRecordSets(context.Background(), &route53.ChangeResourceRecordSetsInput{
 										HostedZoneId: awssdk.String(item.ID),
 										ChangeBatch: &r53types.ChangeBatch{
 											Changes: []r53types.Change{{

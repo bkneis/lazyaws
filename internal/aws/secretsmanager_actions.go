@@ -91,8 +91,12 @@ func (p *SMProvider) Actions(item Item) []ActionDef {
 						ac.PromptInput("Key to delete", "", func(key string) {
 							go func() {
 								delete(m, key)
-								b, _ := json.Marshal(m)
-								_, err := wc.PutSecretValue(context.Background(), &secretsmanager.PutSecretValueInput{
+								b, err := json.Marshal(m)
+								if err != nil {
+									ac.ShowError(fmt.Errorf("marshal secret: %w", err))
+									return
+								}
+								_, err = wc.PutSecretValue(context.Background(), &secretsmanager.PutSecretValueInput{
 									SecretId:     awssdk.String(item.ID),
 									SecretString: awssdk.String(string(b)),
 								})
@@ -127,8 +131,12 @@ func (p *SMProvider) Actions(item Item) []ActionDef {
 								ac.PromptInput("New value for "+key, "", func(val string) {
 									go func() {
 										m[key] = val
-										b, _ := json.Marshal(m)
-										_, err := wc.PutSecretValue(context.Background(), &secretsmanager.PutSecretValueInput{
+										b, err := json.Marshal(m)
+										if err != nil {
+											ac.ShowError(fmt.Errorf("marshal secret: %w", err))
+											return
+										}
+										_, err = wc.PutSecretValue(context.Background(), &secretsmanager.PutSecretValueInput{
 											SecretId:     awssdk.String(item.ID),
 											SecretString: awssdk.String(string(b)),
 										})

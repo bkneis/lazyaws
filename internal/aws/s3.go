@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	smithygo "github.com/aws/smithy-go"
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -227,7 +229,8 @@ func (p *S3Provider) DownloadObject(ctx context.Context, bucketName, key string,
 func (p *S3Provider) tabPolicy(ctx context.Context, item Item) (string, error) {
 	out, err := p.client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{Bucket: awssdk.String(item.ID)})
 	if err != nil {
-		if strings.Contains(err.Error(), "NoSuchBucketPolicy") {
+		var apiErr smithygo.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "NoSuchBucketPolicy" {
 			return "  (no bucket policy)\n", nil
 		}
 		return "", err

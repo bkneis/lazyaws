@@ -376,7 +376,10 @@ func (p *DynamoDBProvider) tabIndexes(ctx context.Context, item Item) (string, e
 		rows := make([][]string, len(t.GlobalSecondaryIndexes))
 		for i, gsi := range t.GlobalSecondaryIndexes {
 			keyStr := gsiKeyStr(gsi.KeySchema)
-			proj := string(gsi.Projection.ProjectionType)
+			proj := ""
+		if gsi.Projection != nil {
+			proj = string(gsi.Projection.ProjectionType)
+		}
 			rows[i] = []string{awssdk.ToString(gsi.IndexName), keyStr, proj, string(gsi.IndexStatus)}
 		}
 		sb.WriteString(Table([]string{"Name", "Key (Hash+Range)", "Projection", "Status"}, rows))
@@ -393,7 +396,10 @@ func (p *DynamoDBProvider) tabIndexes(ctx context.Context, item Item) (string, e
 					rangeAttr = awssdk.ToString(ks.AttributeName)
 				}
 			}
-			proj := string(lsi.Projection.ProjectionType)
+			proj := ""
+		if lsi.Projection != nil {
+			proj = string(lsi.Projection.ProjectionType)
+		}
 			rows[i] = []string{awssdk.ToString(lsi.IndexName), rangeAttr, proj}
 		}
 		sb.WriteString(Table([]string{"Name", "Range Key", "Projection"}, rows))

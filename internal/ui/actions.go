@@ -90,7 +90,7 @@ func (ac *appActionContext) PromptInput(label string, placeholder string, onSubm
 
 // ShowError displays an error message modal.
 func (ac *appActionContext) ShowError(err error) {
-	log.Printf("action error: %v", err)
+	log.Printf("action error [provider=%s item=%s]: %v", ac.app.providers[ac.app.activeProvider].Name(), ac.item.ID, err)
 	a := ac.app
 	a.tapp.QueueUpdateDraw(func() {
 		modal := tview.NewModal().

@@ -1,4 +1,4 @@
-package aws
+package aws_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
@@ -55,7 +56,7 @@ func TestIAMPoliciesProvider_ListItems(t *testing.T) {
 			},
 		},
 	}
-	p := NewIAMPoliciesProviderWithClient(stub)
+	p := awspkg.NewIAMPoliciesProviderWithClient(stub)
 	items, err := p.ListItems(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +83,7 @@ func TestIAMPoliciesProvider_ListItems_Filter(t *testing.T) {
 			{Arn: awssdk.String("arn:aws:iam::123:policy/Beta"), PolicyName: awssdk.String("Beta"), DefaultVersionId: awssdk.String("v1")},
 		},
 	}
-	p := NewIAMPoliciesProviderWithClient(stub)
+	p := awspkg.NewIAMPoliciesProviderWithClient(stub)
 	items, err := p.ListItems(context.Background(), "alp")
 	if err != nil {
 		t.Fatal(err)
@@ -95,11 +96,11 @@ func TestIAMPoliciesProvider_ListItems_Filter(t *testing.T) {
 func TestIAMPoliciesProvider_DocumentTab(t *testing.T) {
 	doc := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:*","Resource":"*"}]}`
 	stub := &stubIAMPoliciesAPI{document: doc}
-	p := NewIAMPoliciesProviderWithClient(stub)
-	item := Item{ID: "arn:aws:iam::123:policy/MyPolicy", Meta: map[string]string{"defaultVersionId": "v1"}}
+	p := awspkg.NewIAMPoliciesProviderWithClient(stub)
+	item := awspkg.Item{ID: "arn:aws:iam::123:policy/MyPolicy", Meta: map[string]string{"defaultVersionId": "v1"}}
 
 	tabs := p.Tabs()
-	var docTab TabDef
+	var docTab awspkg.TabDef
 	for _, tab := range tabs {
 		if tab.Label == "Document" {
 			docTab = tab

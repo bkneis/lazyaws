@@ -3,7 +3,9 @@ package aws
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
+	"sync"
 	"time"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -58,6 +60,7 @@ func (a *cwlClientAdapter) OpenLiveTailStream(ctx context.Context, groups []stri
 // CloudWatchLogsProvider implements Provider for Amazon CloudWatch Logs log groups.
 type CloudWatchLogsProvider struct {
 	client     CloudWatchLogsAPI
+	streamsMu  sync.RWMutex
 	lastStreams []CWLogStreamRow // cached by tabStreams for row-selection in the App
 }
 
@@ -190,10 +193,13 @@ func (p *CloudWatchLogsProvider) tabStreams(ctx context.Context, item Item) (str
 		return "", err
 	}
 	if len(out.LogStreams) == 0 {
-		p.lastStreams = nil
+		p.streamsMu.Lock()
+	p.lastStreams = nil
+	p.streamsMu.Unlock()
 		return "  (no streams found)\n", nil
 	}
 
+	p.streamsMu.Lock()
 	p.lastStreams = make([]CWLogStreamRow, len(out.LogStreams))
 	rows := make([][]string, len(out.LogStreams))
 	for i, s := range out.LogStreams {
@@ -209,16 +215,21 @@ func (p *CloudWatchLogsProvider) tabStreams(ctx context.Context, item Item) (str
 		p.lastStreams[i] = CWLogStreamRow{Name: fullName, LastEvent: lastEvent}
 		rows[i] = []string{displayName, lastEvent}
 	}
+	p.streamsMu.Unlock()
 	return Table([]string{"Stream Name", "Last Event"}, rows), nil
 }
 
 // GetLastStreams returns the streams cached by the most recent tabStreams call.
-func (p *CloudWatchLogsProvider) GetLastStreams() []CWLogStreamRow { return p.lastStreams }
+func (p *CloudWatchLogsProvider) GetLastStreams() []CWLogStreamRow {
+	p.streamsMu.RLock()
+	defer p.streamsMu.RUnlock()
+	return p.lastStreams
+}
 
 // tabTail is the Fetch func for the Tail tab.
 // The App overrides rendering via renderCWLogTail(), so this is a no-op placeholder.
 func (p *CloudWatchLogsProvider) tabTail(_ context.Context, _ Item) (string, error) {
-	return "", nil
+	return "  (tail rendering is managed by the UI layer)\n", nil
 }
 
 // StartTail tails the given log group, dispatching on streamName:
@@ -331,6 +342,7 @@ func (p *CloudWatchLogsProvider) tailStream(ctx context.Context, group, streamNa
 				NextToken:     nextToken,
 			})
 			if err != nil {
+				log.Printf("tailStream poll error (group=%s stream=%s): %v", group, streamName, err)
 				continue // skip transient errors; keep the old token
 			}
 			for _, e := range out.Events {

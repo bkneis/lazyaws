@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"fmt"
 	"strconv"
 	"strings"
@@ -53,7 +54,10 @@ func (p *ASGProvider) ListItems(ctx context.Context, query string) ([]Item, erro
 		}
 		for _, asg := range out.AutoScalingGroups {
 			name := awssdk.ToString(asg.AutoScalingGroupName)
-			asgJSON, _ := json.Marshal(asg)
+			asgJSON, jsonErr := json.Marshal(asg)
+			if jsonErr != nil {
+				log.Printf("warn: marshal ASG %s: %v", name, jsonErr)
+			}
 			items = append(items, Item{
 				ID:   name,
 				Name: name,

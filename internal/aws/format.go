@@ -20,8 +20,23 @@ func KV(pairs [][2]string) string {
 	return sb.String()
 }
 
+// isTviewTag reports whether s (the content between [ and ]) is a tview color/style tag.
+// Valid tags contain only letters, digits, #, :, -, ,, [ and " — no spaces or braces.
+// Examples: "red", "-", "#ff0000", "blue::b", "-:-:-", "\"region\"".
+func isTviewTag(s string) bool {
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+			c == '#' || c == ':' || c == '-' || c == ',' || c == '[' || c == '"') {
+			return false
+		}
+	}
+	return true
+}
+
 // displayLen returns the visible character count of s, excluding tview tag markup
 // (e.g. [red], ["region"]) and \x02...\x03 link markers.
+// Only sequences whose content matches tview's tag syntax are skipped; literal
+// brackets in user content (e.g. JSON arrays) are counted normally.
 func displayLen(s string) int {
 	n := 0
 	for i := 0; i < len(s); {
@@ -33,8 +48,10 @@ func displayLen(s string) int {
 		}
 		if s[i] == '[' {
 			if j := strings.IndexByte(s[i+1:], ']'); j >= 0 {
-				i += j + 2
-				continue
+				if isTviewTag(s[i+1 : i+1+j]) {
+					i += j + 2
+					continue
+				}
 			}
 		}
 		n++

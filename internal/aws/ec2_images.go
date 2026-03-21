@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"fmt"
 	"strconv"
 
@@ -52,7 +53,10 @@ func (p *EC2ImagesProvider) ListItems(ctx context.Context, query string) ([]Item
 		if name == "" {
 			name = id
 		}
-		imgJSON, _ := json.Marshal(img)
+		imgJSON, jsonErr := json.Marshal(img)
+		if jsonErr != nil {
+			log.Printf("warn: marshal image %s: %v", id, jsonErr)
+		}
 		items[i] = Item{
 			ID:   id,
 			Name: name,

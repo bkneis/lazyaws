@@ -47,7 +47,7 @@ internal/ui/
 ```go
 type Provider interface {
     Name() string
-    ListItems(ctx context.Context) ([]Item, error)
+    ListItems(ctx context.Context, query string) ([]Item, error)
     GetDetail(ctx context.Context, item Item) (string, error)  // legacy
     Tabs() []TabDef
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -56,12 +57,19 @@ func (p *EC2Provider) ListItems(ctx context.Context, query string) ([]Item, erro
 					name = id
 				}
 				// Marshal instance JSON for zero-cost tab rendering
-				instJSON, _ := json.Marshal(inst)
+				instJSON, jsonErr := json.Marshal(inst)
+				if jsonErr != nil {
+					log.Printf("warn: marshal instance %s: %v", id, jsonErr)
+				}
+				state := ""
+				if inst.State != nil {
+					state = string(inst.State.Name)
+				}
 				items = append(items, Item{
 					ID:   id,
 					Name: name,
 					Meta: map[string]string{
-						"state":         string(inst.State.Name),
+						"state":         state,
 						"type":          string(inst.InstanceType),
 						"instance_json": string(instJSON),
 					},
@@ -128,9 +136,13 @@ func (p *EC2Provider) tabOverview(_ context.Context, item Item) (string, error) 
 		iamProfile = Link(arnLastSegment(arn), "IAM Roles", arn)
 	}
 
+	state := ""
+	if inst.State != nil {
+		state = string(inst.State.Name)
+	}
 	return KV([][2]string{
 		{"Instance ID", awssdk.ToString(inst.InstanceId)},
-		{"State", string(inst.State.Name)},
+		{"State", state},
 		{"Type", string(inst.InstanceType)},
 		{"AMI", awssdk.ToString(inst.ImageId)},
 		{"Platform", platform},

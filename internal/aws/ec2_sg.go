@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"fmt"
 	"strings"
 
@@ -44,7 +45,10 @@ func (p *EC2SGProvider) ListItems(ctx context.Context, query string) ([]Item, er
 	}
 	items := make([]Item, len(out.SecurityGroups))
 	for i, sg := range out.SecurityGroups {
-		sgJSON, _ := json.Marshal(sg)
+		sgJSON, jsonErr := json.Marshal(sg)
+		if jsonErr != nil {
+			log.Printf("warn: marshal security group %s: %v", awssdk.ToString(sg.GroupId), jsonErr)
+		}
 		items[i] = Item{
 			ID:   awssdk.ToString(sg.GroupId),
 			Name: awssdk.ToString(sg.GroupName),

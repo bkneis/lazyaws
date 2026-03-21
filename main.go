@@ -99,7 +99,7 @@ func main() {
 		for _, s := range strings.Split(*services, ",") {
 			allowed[strings.ToLower(strings.TrimSpace(s))] = true
 		}
-		filtered := providers[:0]
+		filtered := make([]awspkg.Provider, 0, len(providers))
 		for _, p := range providers {
 			if allowed[strings.ToLower(p.Name())] {
 				filtered = append(filtered, p)
