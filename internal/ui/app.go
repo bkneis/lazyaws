@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -69,7 +70,10 @@ type App struct {
 	selectedCWStreamRow int
 	cwTailEvents        []cwTailEvent
 	cwTailCancel        context.CancelFunc
-	cwTailGroups        []string // non-nil + non-empty means multi-group tail is active
+	cwTailGroups        []string    // non-nil + non-empty means multi-group tail is active
+	cwTailJSONMode      bool        // true = JSON collapse/expand mode active
+	cwTailExpanded      map[int]bool // event index → expanded (nil until first toggle)
+	cwTailLineMap       []int        // content row → event index; -1 = non-clickable
 }
 
 type cwTailEvent struct {
@@ -101,7 +105,7 @@ func (a *App) build() {
 			a.activeProvider = i
 			a.panels.searchInput.SetText("")
 			a.panels.statusPages.SwitchToPage("hints")
-			a.resetHints()
+			a.updateHints()
 			a.loadItems(i, "")
 		})
 	}
@@ -207,6 +211,20 @@ func (a *App) build() {
 					}
 					return tview.MouseConsumed, nil
 				}
+			}
+
+			// JSON expand/collapse in CW Logs Tail tab.
+			if a.isCWLogsTailActive() && a.cwTailJSONMode {
+				if contentRow >= 0 && contentRow < len(a.cwTailLineMap) {
+					if eventIdx := a.cwTailLineMap[contentRow]; eventIdx >= 0 {
+						if a.cwTailExpanded == nil {
+							a.cwTailExpanded = make(map[int]bool)
+						}
+						a.cwTailExpanded[eventIdx] = !a.cwTailExpanded[eventIdx]
+						a.panels.detail.SetText(a.renderCWLogTail())
+					}
+				}
+				return tview.MouseConsumed, nil
 			}
 
 			// Generic: follow a cross-resource link on the clicked row.
@@ -722,6 +740,7 @@ func (a *App) selectTab(idx int) {
 		}
 	}
 
+	a.updateHints()
 	a.panels.focused = 2
 	a.tapp.SetFocus(a.panels.detail)
 }
@@ -1184,7 +1203,7 @@ var awsRegions = []string{
 	"sa-east-1", "ca-central-1", "af-south-1", "me-south-1",
 }
 
-// updateHints rebuilds the hints string (with current region) and updates the status bar.
+// updateHints rebuilds the hints string (with current region and context) and updates the status bar.
 func (a *App) updateHints() {
 	ht := a.theme.HeaderTag
 	regionLabel := a.currentRegion
@@ -1199,6 +1218,13 @@ func (a *App) updateHints() {
 		ht + "x[-]: actions   " +
 		ht + "R[-]: region [" + regionLabel + "]   " +
 		ht + "q[-]: quit"
+	if a.isCWLogsTailActive() {
+		jsonLabel := "json"
+		if a.cwTailJSONMode {
+			jsonLabel = "json [on]"
+		}
+		hints += "   " + ht + "j[-]: " + jsonLabel
+	}
 	a.panels.hintsText = " " + hints
 	a.panels.status.SetText(" " + hints)
 }
@@ -1244,23 +1270,30 @@ func (a *App) openRegionPicker() {
 }
 
 // renderCWLogTail generates the content for the CW Logs Tail tab.
+// In JSON mode it collapses JSON lines to a summary with a ▶/▼ arrow;
+// clicking the arrow (tracked via cwTailLineMap) expands the full pretty JSON.
 func (a *App) renderCWLogTail() string {
 	ht := a.theme.HeaderTag
 	var sb strings.Builder
+	lineCount := 0
+	writeLine := func(s string) {
+		sb.WriteString(s)
+		lineCount++
+	}
 
 	if len(a.cwTailGroups) > 0 {
-		fmt.Fprintf(&sb, "  %sGroups%s\n", ht, "[-]")
+		writeLine(fmt.Sprintf("  %sGroups%s\n", ht, "[-]"))
 		for _, g := range a.cwTailGroups {
-			fmt.Fprintf(&sb, "    %s\n", g)
+			writeLine(fmt.Sprintf("    %s\n", g))
 		}
 	} else {
 		stream := ""
 		if len(a.cachedCWLogStreams) > 0 && a.selectedCWStreamRow < len(a.cachedCWLogStreams) {
 			stream = a.cachedCWLogStreams[a.selectedCWStreamRow].Name
 		}
-		fmt.Fprintf(&sb, "  %sGroup%s   %s\n", ht, "[-]", a.currentItem.ID)
+		writeLine(fmt.Sprintf("  %sGroup%s   %s\n", ht, "[-]", a.currentItem.ID))
 		if stream != "" {
-			fmt.Fprintf(&sb, "  %sStream%s  %s\n", ht, "[-]", stream)
+			writeLine(fmt.Sprintf("  %sStream%s  %s\n", ht, "[-]", stream))
 		}
 	}
 
@@ -1268,17 +1301,70 @@ func (a *App) renderCWLogTail() string {
 	if a.cwTailCancel == nil {
 		status = "idle"
 	}
-	fmt.Fprintf(&sb, "  %sStatus%s  %s\n\n", ht, "[-]", status)
+	writeLine(fmt.Sprintf("  %sStatus%s  %s\n", ht, "[-]", status))
+	writeLine("\n")
+
+	// Rebuild line→event index map on every render.
+	lineMap := make([]int, 0, lineCount+len(a.cwTailEvents)*2)
+	for i := 0; i < lineCount; i++ {
+		lineMap = append(lineMap, -1) // header lines are not clickable
+	}
 
 	if len(a.cwTailEvents) == 0 && a.cwTailCancel != nil {
-		sb.WriteString("  Waiting for events…\n")
+		writeLine("  Waiting for events…\n")
+		lineMap = append(lineMap, -1)
 	}
-	for _, ev := range a.cwTailEvents {
+
+	for idx, ev := range a.cwTailEvents {
+		ts := ev.ts.UTC().Format("15:04:05")
+		sep := "  "
 		if len(a.cwTailGroups) > 1 {
-			fmt.Fprintf(&sb, "  %s  [%s]  %s\n", ev.ts.UTC().Format("15:04:05"), ev.group, ev.msg)
-		} else {
-			fmt.Fprintf(&sb, "  %s  %s\n", ev.ts.UTC().Format("15:04:05"), ev.msg)
+			sep = fmt.Sprintf("  [%s]  ", ev.group)
+		}
+
+		if !a.cwTailJSONMode {
+			writeLine(fmt.Sprintf("  %s%s%s\n", ts, sep, ev.msg))
+			lineMap = append(lineMap, -1)
+			continue
+		}
+
+		// JSON mode: try to parse the message.
+		var parsed map[string]any
+		isJSON := json.Unmarshal([]byte(ev.msg), &parsed) == nil
+
+		if !isJSON {
+			writeLine(fmt.Sprintf("  %s%s%s\n", ts, sep, ev.msg))
+			lineMap = append(lineMap, -1)
+			continue
+		}
+
+		// Build summary: prefer "message" field, else truncate raw JSON.
+		summary := ev.msg
+		if msg, ok := parsed["message"].(string); ok {
+			summary = msg
+		} else if len(summary) > 80 {
+			summary = summary[:80] + "…"
+		}
+
+		expanded := a.cwTailExpanded != nil && a.cwTailExpanded[idx]
+		arrow := "▶"
+		if expanded {
+			arrow = "▼"
+		}
+		writeLine(fmt.Sprintf("  %s %s%s%s\n", arrow, ts, sep, summary))
+		lineMap = append(lineMap, idx) // arrow line is clickable
+
+		if expanded {
+			pretty, err := json.MarshalIndent(parsed, "     ", "  ")
+			if err == nil {
+				for _, l := range strings.Split(string(pretty), "\n") {
+					writeLine("     " + l + "\n")
+					lineMap = append(lineMap, -1) // expansion lines are not clickable
+				}
+			}
 		}
 	}
+
+	a.cwTailLineMap = lineMap
 	return sb.String()
 }

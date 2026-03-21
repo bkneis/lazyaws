@@ -69,6 +69,12 @@ func setupKeys(a *App) {
 			a.openRegionPicker()
 			return nil
 		case 'j':
+			if a.isCWLogsTailActive() {
+				a.cwTailJSONMode = !a.cwTailJSONMode
+				a.panels.detail.SetText(a.renderCWLogTail())
+				a.updateHints()
+				return nil
+			}
 			if a.isCWStreamsTabFocused() {
 				a.moveCWStreamRow(1)
 				return nil

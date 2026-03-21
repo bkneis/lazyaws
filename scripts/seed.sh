@@ -203,6 +203,25 @@ for fn in api-handler data-processor auth-validator notification-sender; do
 done
 $AWS logs create-log-group --log-group-name "/app/production" >/dev/null
 
+# ── CloudWatch Logs (JSON events for JSON viewer manual testing) ───────────────
+echo "→ CloudWatch Logs (JSON events)"
+NOW=$(date +%s%3N)
+for fn in api-handler data-processor; do
+  STREAM="2026/03/16/[\$LATEST]abc123"
+  $AWS logs put-log-events \
+    --log-group-name "/aws/lambda/$fn" \
+    --log-stream-name "$STREAM" \
+    --log-events "[
+      {\"timestamp\":$NOW,\"message\":\"START RequestId: abc-$fn Version: \$LATEST\"},
+      {\"timestamp\":$((NOW+50)),\"message\":\"{\\\"level\\\":\\\"info\\\",\\\"requestId\\\":\\\"abc-$fn\\\",\\\"message\\\":\\\"Processing request\\\",\\\"path\\\":\\\"/api/users\\\",\\\"method\\\":\\\"GET\\\",\\\"duration\\\":42}\"},
+      {\"timestamp\":$((NOW+100)),\"message\":\"{\\\"level\\\":\\\"warn\\\",\\\"requestId\\\":\\\"abc-$fn\\\",\\\"message\\\":\\\"Cache miss\\\",\\\"key\\\":\\\"users:list\\\",\\\"ttl\\\":300}\"},
+      {\"timestamp\":$((NOW+150)),\"message\":\"{\\\"level\\\":\\\"error\\\",\\\"requestId\\\":\\\"abc-$fn\\\",\\\"message\\\":\\\"DB timeout\\\",\\\"error\\\":\\\"connection refused\\\",\\\"retries\\\":3,\\\"host\\\":\\\"db.internal:5432\\\"}\"},
+      {\"timestamp\":$((NOW+200)),\"message\":\"END RequestId: abc-$fn\"},
+      {\"timestamp\":$((NOW+250)),\"message\":\"REPORT RequestId: abc-$fn Duration: 150.00 ms Billed Duration: 200 ms Memory Size: 256 MB\"}
+    ]"
+  NOW=$((NOW+1000))
+done
+
 # ── API Gateway v1 (REST API) ─────────────────────────────────────────────────
 echo "→ API Gateway (REST)"
 API_ID=$($AWS apigateway create-rest-api \
