@@ -1,0 +1,21 @@
+# Maintainer: bryanl <noreply@github.com>
+pkgname=lazyaws-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Terminal UI for browsing AWS resources"
+arch=('x86_64' 'aarch64')
+url="https://github.com/bryanl/lazyaws"
+license=('MIT')
+provides=('lazyaws')
+conflicts=('lazyaws')
+
+source_x86_64=("${pkgname}-${pkgver}-x86_64.tar.gz::https://github.com/bryanl/lazyaws/releases/download/v${pkgver}/lazyaws_${pkgver}_linux_amd64.tar.gz")
+source_aarch64=("${pkgname}-${pkgver}-aarch64.tar.gz::https://github.com/bryanl/lazyaws/releases/download/v${pkgver}/lazyaws_${pkgver}_linux_arm64.tar.gz")
+
+sha256sums_x86_64=('REPLACE_WITH_SHA256_FROM_CHECKSUMS_TXT')
+sha256sums_aarch64=('REPLACE_WITH_SHA256_FROM_CHECKSUMS_TXT')
+
+package() {
+    install -Dm755 lazyaws "${pkgdir}/usr/bin/lazyaws"
+    install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

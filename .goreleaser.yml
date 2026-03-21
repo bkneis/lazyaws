@@ -36,3 +36,84 @@ changelog:
       - "^chore:"
       - "Merge pull request"
       - "Merge branch"
+
+brews:
+  - name: lazyaws
+    repository:
+      owner: bryanl
+      name: homebrew-lazyaws
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/bryanl/lazyaws"
+    description: "Terminal UI for browsing AWS resources"
+    license: MIT
+    test: |
+      system "#{bin}/lazyaws", "--version"
+    install: |
+      bin.install "lazyaws"
+
+scoos:
+  - name: lazyaws
+    repository:
+      owner: bryanl
+      name: scoop-lazyaws
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+    directory: bucket
+    homepage: "https://github.com/bryanl/lazyaws"
+    description: "Terminal UI for browsing AWS resources"
+    license: MIT
+
+nfpms:
+  - package_name: lazyaws
+    homepage: "https://github.com/bryanl/lazyaws"
+    maintainer: "bryanl <noreply@github.com>"
+    description: "Terminal UI for browsing AWS resources"
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/lazyaws/LICENSE
+
+dockers:
+  - image_templates:
+      - "bryanl/lazyaws:{{ .Version }}-amd64"
+      - "bryanl/lazyaws:latest-amd64"
+    use: buildx
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/amd64"
+  - image_templates:
+      - "bryanl/lazyaws:{{ .Version }}-arm64"
+      - "bryanl/lazyaws:latest-arm64"
+    use: buildx
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/arm64"
+
+docker_manifests:
+  - name_template: "bryanl/lazyaws:{{ .Version }}"
+    image_templates:
+      - "bryanl/lazyaws:{{ .Version }}-amd64"
+      - "bryanl/lazyaws:{{ .Version }}-arm64"
+  - name_template: "bryanl/lazyaws:latest"
+    image_templates:
+      - "bryanl/lazyaws:latest-amd64"
+      - "bryanl/lazyaws:latest-arm64"
+
+snapcrafts:
+  - name: lazyaws
+    publish: false
+    summary: Terminal UI for browsing AWS resources
+    description: |
+      lazyaws is a lazygit/lazydocker-style TUI for navigating AWS resources.
+      Supports S3, Lambda, DynamoDB, EC2, CloudWatch Logs, and more.
+    confinement: classic
+    grade: stable
+    base: bare

@@ -1,0 +1,24 @@
+name: lazyaws
+base: bare
+version: git
+summary: Terminal UI for browsing AWS resources
+description: |
+  lazyaws is a lazygit/lazydocker-style TUI for navigating AWS resources
+  from your terminal. Supports S3, Lambda, DynamoDB, EC2, CloudWatch Logs, and more.
+confinement: classic
+grade: stable
+
+parts:
+  lazyaws:
+    plugin: go
+    source: .
+    build-snaps:
+      - go/1.24/stable
+    override-build: |
+      go build -o $SNAPCRAFT_PART_INSTALL/bin/lazyaws \
+        -ldflags "-s -w -X main.version=$(git describe --tags --abbrev=0)" \
+        .
+
+apps:
+  lazyaws:
+    command: bin/lazyaws

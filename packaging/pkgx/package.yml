@@ -1,0 +1,12 @@
+distributable:
+  url: https://github.com/bryanl/lazyaws/releases/download/v{{version}}/lazyaws_{{version}}_{{platform.os}}_{{platform.arch}}.tar.gz
+  strip-components: 0
+
+versions:
+  github: bryanl/lazyaws/releases/tags
+  strip: /^v/
+
+provides:
+  - bin/lazyaws
+
+test: lazyaws --version
