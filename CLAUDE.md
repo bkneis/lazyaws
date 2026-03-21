@@ -67,8 +67,8 @@ When asked to add a new provider (e.g. "add a lazyaws provider for DynamoDB"), f
 - **Service file** (`internal/aws/<service>.go`):
   - Define a narrow `<Service>API` interface (only methods the provider calls).
   - Implement `Provider`: `Name()`, `ListItems()`, `GetDetail()` (delegates to first tab), `Tabs()`.
-  - Two constructors: `New<Service>Provider(cfg aws.Config, local bool)` and `New<Service>ProviderWithClient(client <Service>API)`.
-  - LocalStack endpoint override via `o.BaseEndpoint = aws.String("http://localhost:4566")` inside the `local` guard.
+  - Two constructors: `New<Service>Provider(cfg aws.Config, endpointURL string)` and `New<Service>ProviderWithClient(client <Service>API)`.
+  - LocalStack endpoint override: if `endpointURL != ""` append `func(o *<svc>.Options) { o.BaseEndpoint = aws.String(endpointURL) }` to opts.
   - `GetDetail` must call the first `TabDef.Fetch`, not duplicate logic.
 - **Register**: add `awspkg.New<Service>Provider(cfg, *local)` to the `providers` slice in `main.go`.
 - **Tests** (`internal/aws/<service>_test.go`): table-driven, implement the narrow interface directly in the test file (no mocking library). Mirror the structure of `s3_test.go`.
@@ -85,3 +85,16 @@ Tests use constructor injection via the `<Service>API` interface. Table-driven t
 ### LocalStack
 
 Pass `-local` flag to redirect all providers to `http://localhost:4566` with path-style addressing.
+
+### AWS SDK Error Handling
+
+Some service errors are not modeled as Go types in `types/errors.go` (e.g. `NoSuchBucketPolicy`). Use the smithy `APIError` interface to check error codes:
+```go
+var apiErr smithygo.APIError
+if errors.As(err, &apiErr) && apiErr.ErrorCode() == "NoSuchBucketPolicy" { ... }
+```
+Import: `smithygo "github.com/aws/smithy-go"`.
+
+### EC2/ASG/SG/Volume/Image: Meta-JSON Pattern
+
+These providers marshal the full SDK struct into `item.Meta["instance_json"]` (or `sg_json`, `asg_json`, etc.) during `ListItems` for zero-cost tab rendering. Tabs use `instanceFromMeta(item)` instead of additional API calls. Pointer fields on the unmarshalled struct (e.g. `inst.State *InstanceState`) must be nil-checked before dereferencing.
