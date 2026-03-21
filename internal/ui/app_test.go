@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 )
 
 func TestRenderTabBar(t *testing.T) {

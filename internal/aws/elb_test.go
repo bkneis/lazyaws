@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	elbtypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 )
 
 type stubELB struct {

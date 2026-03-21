@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	rdstypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 )
 
 type stubRDS struct {

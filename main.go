@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
-	"github.com/bryanl/lazyaws/internal/ui"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
+	"github.com/bkneis/lazyaws/internal/ui"
 )
 
 func setupLog() (*os.File, error) {

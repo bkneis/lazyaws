@@ -11,7 +11,7 @@ import (
 	apigwv1types "github.com/aws/aws-sdk-go-v2/service/apigateway/types"
 	apigwv2 "github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
 	apigwv2types "github.com/aws/aws-sdk-go-v2/service/apigatewayv2/types"
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 )
 
 // stubAPIGatewayV2 implements awspkg.APIGatewayV2API.

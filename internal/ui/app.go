@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )

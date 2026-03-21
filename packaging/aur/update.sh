@@ -3,7 +3,7 @@
 set -euo pipefail
 
 VER=${1:?version required}
-CHECKSUMS_URL="https://github.com/bryanl/lazyaws/releases/download/v${VER}/checksums.txt"
+CHECKSUMS_URL="https://github.com/bkneis/lazyaws/releases/download/v${VER}/checksums.txt"
 
 echo "Fetching checksums for v${VER}..."
 CHECKSUMS=$(curl -fsSL "${CHECKSUMS_URL}")

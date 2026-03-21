@@ -10,18 +10,18 @@ These channels are driven entirely by GoReleaser on each release push. No manual
 |---|---|
 | `DOCKERHUB_USERNAME` | DockerHub account name |
 | `DOCKERHUB_TOKEN` | DockerHub → Account Settings → Security → New Access Token |
-| `HOMEBREW_TAP_TOKEN` | GitHub PAT (classic), `repo` scope, write access to `bryanl/homebrew-lazyaws` |
-| `SCOOP_BUCKET_TOKEN` | GitHub PAT (classic), `repo` scope, write access to `bryanl/scoop-lazyaws` |
+| `HOMEBREW_TAP_TOKEN` | GitHub PAT (classic), `repo` scope, write access to `bkneis/homebrew-lazyaws` |
+| `SCOOP_BUCKET_TOKEN` | GitHub PAT (classic), `repo` scope, write access to `bkneis/scoop-lazyaws` |
 
 ### One-time companion repo setup
 
-1. Create `bryanl/homebrew-lazyaws` — public, empty. GoReleaser will push `Formula/lazyaws.rb`.
-2. Create `bryanl/scoop-lazyaws` — public, empty. GoReleaser will push `bucket/lazyaws.json`.
+1. Create `bkneis/homebrew-lazyaws` — public, empty. GoReleaser will push `Formula/lazyaws.rb`.
+2. Create `bkneis/scoop-lazyaws` — public, empty. GoReleaser will push `bucket/lazyaws.json`.
 
 ### What GoReleaser produces automatically
 
-- Homebrew formula in `bryanl/homebrew-lazyaws`
-- Scoop manifest in `bryanl/scoop-lazyaws`
+- Homebrew formula in `bkneis/homebrew-lazyaws`
+- Scoop manifest in `bkneis/scoop-lazyaws`
 - `.deb` and `.rpm` packages attached to the GitHub release
 - Multi-arch Docker images (`linux/amd64`, `linux/arm64`) on DockerHub
 - `.snap` build artifact (not published until classic confinement is approved — see Snap section below)
@@ -48,7 +48,7 @@ Classic confinement is required because lazyaws reads `~/.aws/` credentials.
 pkgx auto-tracks GitHub releases after the initial PR. No further PRs needed once merged.
 
 1. Fork https://github.com/pkgxdev/pantry
-2. Add `projects/github.com/bryanl/lazyaws/package.yml` (file is at `packaging/pkgx/package.yml` in this repo)
+2. Add `projects/github.com/bkneis/lazyaws/package.yml` (file is at `packaging/pkgx/package.yml` in this repo)
 3. Open a PR — maintainers typically merge within a few days
 
 ### AUR (`lazyaws-bin`)
@@ -110,9 +110,9 @@ Update `<version>` in `lazyaws.nuspec`, `$version` and `checksum64` in `tools/ch
 
 ```
 [ ] goreleaser release --snapshot --clean   # local dry-run
-[ ] brew tap bryanl/lazyaws && brew install lazyaws && lazyaws --version
-[ ] scoop bucket add lazyaws https://github.com/bryanl/scoop-lazyaws && scoop install lazyaws
-[ ] docker run --rm bryanl/lazyaws --version
+[ ] brew tap bkneis/lazyaws && brew install lazyaws && lazyaws --version
+[ ] scoop bucket add lazyaws https://github.com/bkneis/scoop-lazyaws && scoop install lazyaws
+[ ] docker run --rm bkneis/lazyaws --version
 [ ] dpkg -i lazyaws_*.deb && lazyaws --version
 [ ] rpm -i lazyaws_*.rpm && lazyaws --version
 [ ] yay -S lazyaws-bin   (Arch)

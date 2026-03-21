@@ -33,7 +33,7 @@ import (
 	"strings"
 	"testing"
 
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 )
 
 func TestKV(t *testing.T) {
@@ -233,7 +233,7 @@ import (
 	"strings"
 	"testing"
 
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 )
 
 func TestRenderTabBar(t *testing.T) {
@@ -277,7 +277,7 @@ import (
 	"fmt"
 	"strings"
 
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 	"github.com/rivo/tview"
 )
 
@@ -985,7 +985,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 )
 
 type stubSNS struct{}
@@ -1613,8 +1613,8 @@ import (
 	"flag"
 	"log"
 
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
-	"github.com/bryanl/lazyaws/internal/ui"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
+	"github.com/bkneis/lazyaws/internal/ui"
 )
 
 func main() {

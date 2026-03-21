@@ -40,11 +40,11 @@ changelog:
 brews:
   - name: lazyaws
     repository:
-      owner: bryanl
+      owner: bkneis
       name: homebrew-lazyaws
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
-    homepage: "https://github.com/bryanl/lazyaws"
+    homepage: "https://github.com/bkneis/lazyaws"
     description: "Terminal UI for browsing AWS resources"
     license: MIT
     test: |
@@ -55,18 +55,18 @@ brews:
 scoos:
   - name: lazyaws
     repository:
-      owner: bryanl
+      owner: bkneis
       name: scoop-lazyaws
       token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
     directory: bucket
-    homepage: "https://github.com/bryanl/lazyaws"
+    homepage: "https://github.com/bkneis/lazyaws"
     description: "Terminal UI for browsing AWS resources"
     license: MIT
 
 nfpms:
   - package_name: lazyaws
-    homepage: "https://github.com/bryanl/lazyaws"
-    maintainer: "bryanl <noreply@github.com>"
+    homepage: "https://github.com/bkneis/lazyaws"
+    maintainer: "bkneis <noreply@github.com>"
     description: "Terminal UI for browsing AWS resources"
     license: MIT
     formats:
@@ -79,8 +79,8 @@ nfpms:
 
 dockers:
   - image_templates:
-      - "bryanl/lazyaws:{{ .Version }}-amd64"
-      - "bryanl/lazyaws:latest-amd64"
+      - "bkneis/lazyaws:{{ .Version }}-amd64"
+      - "bkneis/lazyaws:latest-amd64"
     use: buildx
     goos: linux
     goarch: amd64
@@ -88,8 +88,8 @@ dockers:
     build_flag_templates:
       - "--platform=linux/amd64"
   - image_templates:
-      - "bryanl/lazyaws:{{ .Version }}-arm64"
-      - "bryanl/lazyaws:latest-arm64"
+      - "bkneis/lazyaws:{{ .Version }}-arm64"
+      - "bkneis/lazyaws:latest-arm64"
     use: buildx
     goos: linux
     goarch: arm64
@@ -98,14 +98,14 @@ dockers:
       - "--platform=linux/arm64"
 
 docker_manifests:
-  - name_template: "bryanl/lazyaws:{{ .Version }}"
+  - name_template: "bkneis/lazyaws:{{ .Version }}"
     image_templates:
-      - "bryanl/lazyaws:{{ .Version }}-amd64"
-      - "bryanl/lazyaws:{{ .Version }}-arm64"
-  - name_template: "bryanl/lazyaws:latest"
+      - "bkneis/lazyaws:{{ .Version }}-amd64"
+      - "bkneis/lazyaws:{{ .Version }}-arm64"
+  - name_template: "bkneis/lazyaws:latest"
     image_templates:
-      - "bryanl/lazyaws:latest-amd64"
-      - "bryanl/lazyaws:latest-arm64"
+      - "bkneis/lazyaws:latest-amd64"
+      - "bkneis/lazyaws:latest-arm64"
 
 snapcrafts:
   - name: lazyaws

@@ -1,7 +1,7 @@
 PortSystem          1.0
 PortGroup           golang 1.0
 
-go.setup            github.com/bryanl/lazyaws 0.1.0 v
+go.setup            github.com/bkneis/lazyaws 0.1.0 v
 go.offline_build    yes
 github.tarball_from archive
 
@@ -9,7 +9,7 @@ name                lazyaws
 categories          sysutils
 platforms           darwin
 license             MIT
-maintainers         {github.com/bryanl @bryanl} openmaintainer
+maintainers         {github.com/bkneis @bkneis} openmaintainer
 
 description         Terminal UI for browsing AWS resources
 long_description    {*}${description}. Navigate S3, Lambda, DynamoDB, EC2, \

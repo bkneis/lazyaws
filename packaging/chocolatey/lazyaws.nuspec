@@ -4,9 +4,9 @@
     <id>lazyaws</id>
     <version>0.1.0</version>
     <title>lazyaws</title>
-    <authors>bryanl</authors>
-    <projectUrl>https://github.com/bryanl/lazyaws</projectUrl>
-    <licenseUrl>https://github.com/bryanl/lazyaws/blob/main/LICENSE</licenseUrl>
+    <authors>bkneis</authors>
+    <projectUrl>https://github.com/bkneis/lazyaws</projectUrl>
+    <licenseUrl>https://github.com/bkneis/lazyaws/blob/main/LICENSE</licenseUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <description>Terminal UI for browsing AWS resources, inspired by lazygit/lazydocker.</description>
     <tags>aws terminal tui cli</tags>

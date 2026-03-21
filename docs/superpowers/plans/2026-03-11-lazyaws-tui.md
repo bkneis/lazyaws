@@ -46,7 +46,7 @@
 
 ```bash
 cd /home/bryan/lazyaws
-go mod init github.com/bryanl/lazyaws
+go mod init github.com/bkneis/lazyaws
 ```
 
 Expected: `go.mod` created.
@@ -132,8 +132,8 @@ import (
 	"flag"
 	"log"
 
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
-	"github.com/bryanl/lazyaws/internal/ui"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
+	"github.com/bkneis/lazyaws/internal/ui"
 )
 
 func main() {
@@ -190,7 +190,7 @@ import (
 	"context"
 	"testing"
 
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 )
 
 func TestLoadConfig_returnsValidConfig(t *testing.T) {
@@ -244,7 +244,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 )
 
 // stubS3 implements awspkg.S3API using in-memory data.
@@ -437,7 +437,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 )
 
 // stubLambda implements awspkg.LambdaAPI using in-memory data.
@@ -822,7 +822,7 @@ import (
 	"context"
 	"fmt"
 
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 	"github.com/rivo/tview"
 )
 

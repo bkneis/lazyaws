@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	awspkg "github.com/bkneis/lazyaws/internal/aws"
 )
 
 func TestLoadConfig_returnsValidConfig(t *testing.T) {
