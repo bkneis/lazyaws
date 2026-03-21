@@ -13,6 +13,7 @@
   <a href="https://pkg.go.dev/github.com/bkneis/lazyaws"><img src="https://img.shields.io/badge/go-reference-FF9900" alt="go reference"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/bkneis/lazyaws?color=FF9900" alt="MIT license"></a>
   <a href="https://github.com/bkneis/lazyaws/actions"><img src="https://img.shields.io/github/actions/workflow/status/bkneis/lazyaws/test.yml?label=tests" alt="tests"></a>
+  <a href="https://hub.docker.com/r/bkneis/lazyaws"><img src="https://img.shields.io/docker/pulls/bkneis/lazyaws" alt="Docker Pulls"></a>
 </p>
 
 ---
@@ -27,7 +28,7 @@ The aim of this project is to make it easier to navigate, observe and manage you
 
 ## Why
 
-The AWS CLI is powerful but slow for exploratory workflows. Finding a Lambda's env vars, checking a CloudFormation stack's outputs, or inspecting an SQS dead-letter queue means multiple commands with long argument lists.
+The AWS CLI is powerful but slow for exploratory workflows. Finding a Lambda's env vars, checking a CloudFormation stack's outputs, or inspecting an SQS queue means multiple commands with long argument lists.
 
 `lazyaws` puts all of that in a three-panel TUI you can navigate in seconds — no flags to remember, no context-switching to the browser console and waiting for static assets to load.
 
@@ -35,11 +36,43 @@ It pairs naturally with **LocalStack-based development**: run `lazyaws -local` o
 
 ## Install
 
+**macOS / Linux**
+```bash
+brew install bkneis/lazyaws/lazyaws
+```
+
+**Linux packages**
+```bash
+# Debian/Ubuntu
+sudo dpkg -i lazyaws_*.deb     # download .deb from GitHub Releases
+
+# RPM-based
+sudo rpm -i lazyaws_*.rpm      # download .rpm from GitHub Releases
+```
+
+**Windows**
+```bash
+scoop bucket add lazyaws https://github.com/bkneis/scoop-lazyaws
+scoop install lazyaws
+```
+
+**Docker (all platforms)**
+```bash
+docker run --rm -it \
+  -e AWS_ACCESS_KEY_ID \
+  -e AWS_SECRET_ACCESS_KEY \
+  -e AWS_DEFAULT_REGION \
+  bkneis/lazyaws
+```
+
+For LocalStack, pass `--network host -e AWS_ENDPOINT_URL=http://localhost:4566`.
+
+**go install / binary**
 ```bash
 go install github.com/bkneis/lazyaws@latest
 ```
 
-Or download a pre-built binary from the [releases page](https://github.com/bkneis/lazyaws/releases).
+Or download a pre-built binary (Windows/macOS/Linux, amd64/arm64) from the [releases page](https://github.com/bkneis/lazyaws/releases).
 
 ## Usage
 
