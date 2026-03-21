@@ -29,10 +29,11 @@ type APIGatewayV1API interface {
 }
 
 type APIGatewayProvider struct {
-	v2      APIGatewayV2API
-	v1      APIGatewayV1API
-	metrics CloudWatchMetricsAPI
-	region  string
+	v2        APIGatewayV2API
+	v1        APIGatewayV1API
+	metrics   CloudWatchMetricsAPI
+	region    string
+	localMode bool // true = skip v2 calls (e.g. LocalStack doesn't support API Gateway v2)
 }
 
 func NewAPIGatewayProvider(cfg awssdk.Config, endpointURL string) *APIGatewayProvider {
@@ -43,10 +44,11 @@ func NewAPIGatewayProvider(cfg awssdk.Config, endpointURL string) *APIGatewayPro
 		optsV1 = append(optsV1, func(o *apigwv1.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
 	return &APIGatewayProvider{
-		v2:      apigwv2.NewFromConfig(cfg, optsV2...),
-		v1:      apigwv1.NewFromConfig(cfg, optsV1...),
-		metrics: cloudwatch.NewFromConfig(cfg),
-		region:  cfg.Region,
+		v2:        apigwv2.NewFromConfig(cfg, optsV2...),
+		v1:        apigwv1.NewFromConfig(cfg, optsV1...),
+		metrics:   cloudwatch.NewFromConfig(cfg),
+		region:    cfg.Region,
+		localMode: endpointURL != "",
 	}
 }
 
@@ -59,17 +61,19 @@ func (p *APIGatewayProvider) Name() string { return "API Gateway" }
 func (p *APIGatewayProvider) ListItems(ctx context.Context, query string) ([]Item, error) {
 	var items []Item
 
-	v2out, err := p.v2.GetApis(ctx, &apigwv2.GetApisInput{})
-	if err != nil {
-		return nil, fmt.Errorf("get apis: %w", err)
-	}
-	for _, api := range v2out.Items {
-		apiType := strings.ToUpper(string(api.ProtocolType))
-		items = append(items, Item{
-			ID:   awssdk.ToString(api.ApiId),
-			Name: fmt.Sprintf("%s (%s)", awssdk.ToString(api.Name), apiType),
-			Meta: map[string]string{"type": apiType, "api_name": awssdk.ToString(api.Name)},
-		})
+	if !p.localMode {
+		v2out, err := p.v2.GetApis(ctx, &apigwv2.GetApisInput{})
+		if err != nil {
+			return nil, fmt.Errorf("get apis: %w", err)
+		}
+		for _, api := range v2out.Items {
+			apiType := strings.ToUpper(string(api.ProtocolType))
+			items = append(items, Item{
+				ID:   awssdk.ToString(api.ApiId),
+				Name: fmt.Sprintf("%s (%s)", awssdk.ToString(api.Name), apiType),
+				Meta: map[string]string{"type": apiType, "api_name": awssdk.ToString(api.Name)},
+			})
+		}
 	}
 
 	v1out, err := p.v1.GetRestApis(ctx, &apigwv1.GetRestApisInput{})

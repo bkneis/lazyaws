@@ -104,6 +104,7 @@ AWS credentials are loaded from the standard chain (`AWS_*` environment variable
 - Completely clickable TUI — mouse support, no need to learn keyboard shortcuts
 - Single binary ~28mb that works across Windows, Linux and Mac 32/64bit
 - Doesn't require the AWS CLI to be installed — built entirely on the Go AWS SDK using your local credentials
+- Copy and Paste capability by switching mouse mode using (M)
 
 ---
 

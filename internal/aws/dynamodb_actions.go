@@ -88,7 +88,19 @@ func (p *DynamoDBProvider) Actions(item Item) []ActionDef {
 				Label: "Add item",
 				Key:   'i',
 				Func: func(ctx context.Context, item Item, ac ActionContext) error {
-					ac.PromptInput("Item JSON", `{"id": "value"}`, func(raw string) {
+					placeholder := `{"id": "value"}`
+					if out, err := p.client.DescribeTable(ctx, &dynamodb.DescribeTableInput{
+						TableName: awssdk.String(item.ID),
+					}); err == nil && out.Table != nil {
+						keys := make(map[string]string, len(out.Table.KeySchema))
+						for _, ks := range out.Table.KeySchema {
+							keys[awssdk.ToString(ks.AttributeName)] = ""
+						}
+						if b, err2 := json.Marshal(keys); err2 == nil {
+							placeholder = string(b)
+						}
+					}
+					ac.PromptInput("Item JSON", placeholder, func(raw string) {
 						go func() {
 							var m map[string]any
 							if err := json.Unmarshal([]byte(raw), &m); err != nil {

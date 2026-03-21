@@ -16,6 +16,7 @@ import "github.com/gdamore/tcell/v2"
 //	q           — quit
 //	r           — refresh current resource list
 //	R           — open region picker
+//	M           — toggle mouse mode (mouse = app row clicks; select = OS text selection)
 func setupKeys(a *App) {
 	a.tapp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		searchActive := a.tapp.GetFocus() == a.panels.searchInput
@@ -120,6 +121,9 @@ func setupKeys(a *App) {
 				a.advanceDynamoPage(false)
 				return nil
 			}
+		case 'M':
+			a.toggleMouseMode()
+			return nil
 		case ']':
 			a.nextTab()
 			return nil

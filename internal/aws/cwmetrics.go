@@ -48,16 +48,16 @@ func sparkline(values []float64) string {
 		}
 	}
 	runes := []rune(sparkChars)
-	bars := make([]byte, len(values))
+	bars := make([]rune, len(values))
 	for i, v := range values {
 		if maxVal == 0 {
-			bars[i] = sparkChars[0]
+			bars[i] = runes[0]
 		} else {
 			idx := int(math.Round(v/maxVal*float64(len(runes)-1)))
 			if idx >= len(runes) {
 				idx = len(runes) - 1
 			}
-			bars[i] = sparkChars[idx]
+			bars[i] = runes[idx]
 		}
 	}
 	return string(bars)

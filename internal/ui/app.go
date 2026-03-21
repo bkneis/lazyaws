@@ -65,6 +65,8 @@ type App struct {
 	selectedShardRow    int
 	currentRegion       string
 	rebuildFn           func(string) []awspkg.Provider
+	mouseEnabled bool         // true = app handles mouse events; false = OS terminal handles (enables text selection)
+	screen       tcell.Screen // captured on first draw via SetBeforeDrawFunc
 	// CW Logs live tail state
 	cachedCWLogStreams  []awspkg.CWLogStreamRow
 	selectedCWStreamRow int
@@ -93,6 +95,7 @@ func NewApp(providers []awspkg.Provider, theme Theme, region string, rebuildFn f
 		providers:     providers,
 		currentRegion: region,
 		rebuildFn:     rebuildFn,
+		mouseEnabled:  true,
 	}
 	a.build()
 	a.updateHints()
@@ -261,6 +264,12 @@ func (a *App) build() {
 	setupKeys(a)
 
 	a.tapp.EnableMouse(true)
+	a.tapp.SetBeforeDrawFunc(func(s tcell.Screen) bool {
+		if a.screen == nil {
+			a.screen = s
+		}
+		return false
+	})
 	a.rootPages = tview.NewPages().AddPage("main", outer, true, true)
 	a.tapp.SetRoot(a.rootPages, true).SetFocus(a.panels.resources)
 }
@@ -1225,8 +1234,27 @@ func (a *App) updateHints() {
 		}
 		hints += "   " + ht + "j[-]: " + jsonLabel
 	}
+	mouseLabel := "mouse"
+	if !a.mouseEnabled {
+		mouseLabel = "select"
+	}
+	hints += "   " + ht + "M[-]: " + mouseLabel
 	a.panels.hintsText = " " + hints
 	a.panels.status.SetText(" " + hints)
+}
+
+// toggleMouseMode switches between app mouse-tracking (for row clicks) and
+// OS-handled mouse (which restores native terminal text selection).
+func (a *App) toggleMouseMode() {
+	a.mouseEnabled = !a.mouseEnabled
+	if a.screen != nil {
+		if a.mouseEnabled {
+			a.screen.EnableMouse(tcell.MouseMotionEvents)
+		} else {
+			a.screen.DisableMouse()
+		}
+	}
+	a.updateHints()
 }
 
 // switchRegion rebuilds providers for the given region and reloads items.
