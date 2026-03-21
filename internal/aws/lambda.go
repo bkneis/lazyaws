@@ -7,6 +7,7 @@ import (
 	"time"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 )
 
@@ -19,7 +20,10 @@ type LambdaAPI interface {
 }
 
 // LambdaProvider implements Provider for AWS Lambda.
-type LambdaProvider struct{ client LambdaAPI }
+type LambdaProvider struct {
+	client  LambdaAPI
+	metrics CloudWatchMetricsAPI
+}
 
 func NewLambdaProvider(cfg awssdk.Config, endpointURL string) *LambdaProvider {
 	var opts []func(*lambda.Options)
@@ -28,7 +32,10 @@ func NewLambdaProvider(cfg awssdk.Config, endpointURL string) *LambdaProvider {
 			o.BaseEndpoint = awssdk.String(endpointURL)
 		})
 	}
-	return &LambdaProvider{client: lambda.NewFromConfig(cfg, opts...)}
+	return &LambdaProvider{
+		client:  lambda.NewFromConfig(cfg, opts...),
+		metrics: cloudwatch.NewFromConfig(cfg),
+	}
 }
 
 func NewLambdaProviderWithClient(client LambdaAPI) *LambdaProvider {
@@ -68,7 +75,23 @@ func (p *LambdaProvider) Tabs() []TabDef {
 		{Label: "Overview", Fetch: p.tabOverview},
 		{Label: "Env", Fetch: p.tabEnv},
 		{Label: "Triggers", Fetch: p.tabTriggers},
+		{Label: "Metrics", Fetch: p.tabMetrics},
 	}
+}
+
+func (p *LambdaProvider) tabMetrics(ctx context.Context, item Item) (string, error) {
+	specs := []metricSpec{
+		{id: "invocations", label: "Invocations", ns: "AWS/Lambda", name: "Invocations", stat: "Sum", dimKey: "FunctionName", dimVal: item.ID},
+		{id: "errors", label: "Errors", ns: "AWS/Lambda", name: "Errors", stat: "Sum", dimKey: "FunctionName", dimVal: item.ID, isError: true},
+		{id: "duration", label: "Duration", ns: "AWS/Lambda", name: "Duration", stat: "Average", dimKey: "FunctionName", dimVal: item.ID, unit: "ms"},
+		{id: "throttles", label: "Throttles", ns: "AWS/Lambda", name: "Throttles", stat: "Sum", dimKey: "FunctionName", dimVal: item.ID, isError: true},
+		{id: "concurrent", label: "Concurrent Executions", ns: "AWS/Lambda", name: "ConcurrentExecutions", stat: "Maximum", dimKey: "FunctionName", dimVal: item.ID},
+	}
+	data, err := fetchSparklines(ctx, p.metrics, specs, 3, 300)
+	if err != nil {
+		return "", err
+	}
+	return renderMetricsTab(specs, data, 3, 300), nil
 }
 
 func (p *LambdaProvider) tabOverview(ctx context.Context, item Item) (string, error) {

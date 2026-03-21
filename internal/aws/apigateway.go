@@ -9,6 +9,7 @@ import (
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	apigwv1 "github.com/aws/aws-sdk-go-v2/service/apigateway"
 	apigwv2 "github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 )
 
 type APIGatewayV2API interface {
@@ -28,9 +29,10 @@ type APIGatewayV1API interface {
 }
 
 type APIGatewayProvider struct {
-	v2     APIGatewayV2API
-	v1     APIGatewayV1API
-	region string
+	v2      APIGatewayV2API
+	v1      APIGatewayV1API
+	metrics CloudWatchMetricsAPI
+	region  string
 }
 
 func NewAPIGatewayProvider(cfg awssdk.Config, endpointURL string) *APIGatewayProvider {
@@ -41,9 +43,10 @@ func NewAPIGatewayProvider(cfg awssdk.Config, endpointURL string) *APIGatewayPro
 		optsV1 = append(optsV1, func(o *apigwv1.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
 	return &APIGatewayProvider{
-		v2:     apigwv2.NewFromConfig(cfg, optsV2...),
-		v1:     apigwv1.NewFromConfig(cfg, optsV1...),
-		region: cfg.Region,
+		v2:      apigwv2.NewFromConfig(cfg, optsV2...),
+		v1:      apigwv1.NewFromConfig(cfg, optsV1...),
+		metrics: cloudwatch.NewFromConfig(cfg),
+		region:  cfg.Region,
 	}
 }
 
@@ -65,7 +68,7 @@ func (p *APIGatewayProvider) ListItems(ctx context.Context, query string) ([]Ite
 		items = append(items, Item{
 			ID:   awssdk.ToString(api.ApiId),
 			Name: fmt.Sprintf("%s (%s)", awssdk.ToString(api.Name), apiType),
-			Meta: map[string]string{"type": apiType},
+			Meta: map[string]string{"type": apiType, "api_name": awssdk.ToString(api.Name)},
 		})
 	}
 
@@ -77,7 +80,7 @@ func (p *APIGatewayProvider) ListItems(ctx context.Context, query string) ([]Ite
 		items = append(items, Item{
 			ID:   awssdk.ToString(api.Id),
 			Name: fmt.Sprintf("%s (REST)", awssdk.ToString(api.Name)),
-			Meta: map[string]string{"type": "REST"},
+			Meta: map[string]string{"type": "REST", "api_name": awssdk.ToString(api.Name)},
 		})
 	}
 
@@ -108,7 +111,29 @@ func (p *APIGatewayProvider) Tabs() []TabDef {
 		{Label: "Overview", Fetch: p.tabOverview},
 		{Label: "Routes", Fetch: p.tabRoutes},
 		{Label: "Stages", Fetch: p.tabStages},
+		{Label: "Metrics", Fetch: p.tabMetrics},
 	}
+}
+
+func (p *APIGatewayProvider) tabMetrics(ctx context.Context, item Item) (string, error) {
+	// v1 REST APIs use ApiName dimension; v2 HTTP/WS APIs use ApiId.
+	dimKey, dimVal := "ApiId", item.ID
+	if item.Meta["type"] == "REST" {
+		dimKey = "ApiName"
+		dimVal = item.Meta["api_name"]
+	}
+	specs := []metricSpec{
+		{id: "count", label: "Requests", ns: "AWS/ApiGateway", name: "Count", stat: "Sum", dimKey: dimKey, dimVal: dimVal},
+		{id: "err4xx", label: "4XX Errors", ns: "AWS/ApiGateway", name: "4XXError", stat: "Sum", dimKey: dimKey, dimVal: dimVal, isError: true},
+		{id: "err5xx", label: "5XX Errors", ns: "AWS/ApiGateway", name: "5XXError", stat: "Sum", dimKey: dimKey, dimVal: dimVal, isError: true},
+		{id: "latency", label: "Latency", ns: "AWS/ApiGateway", name: "Latency", stat: "Average", dimKey: dimKey, dimVal: dimVal, unit: "ms"},
+		{id: "intlatency", label: "Integration Latency", ns: "AWS/ApiGateway", name: "IntegrationLatency", stat: "Average", dimKey: dimKey, dimVal: dimVal, unit: "ms"},
+	}
+	data, err := fetchSparklines(ctx, p.metrics, specs, 1, 300)
+	if err != nil {
+		return "", err
+	}
+	return renderMetricsTab(specs, data, 1, 300), nil
 }
 
 func (p *APIGatewayProvider) tabOverview(ctx context.Context, item Item) (string, error) {

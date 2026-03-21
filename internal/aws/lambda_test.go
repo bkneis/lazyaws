@@ -202,8 +202,8 @@ func TestLambdaProvider_Tabs(t *testing.T) {
 	p := awspkg.NewLambdaProviderWithClient(newStubLambda())
 	tabs := p.Tabs()
 
-	if len(tabs) != 3 {
-		t.Fatalf("got %d tabs, want 3", len(tabs))
+	if len(tabs) != 4 {
+		t.Fatalf("got %d tabs, want 4", len(tabs))
 	}
 
 	item := awspkg.Item{ID: "my-function", Name: "my-function"}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 )
 
@@ -23,7 +24,8 @@ type ECSAPI interface {
 
 // ECSProvider implements Provider for Amazon ECS Clusters.
 type ECSProvider struct {
-	client ECSAPI
+	client  ECSAPI
+	metrics CloudWatchMetricsAPI
 }
 
 func NewECSProvider(cfg awssdk.Config, endpointURL string) *ECSProvider {
@@ -31,7 +33,7 @@ func NewECSProvider(cfg awssdk.Config, endpointURL string) *ECSProvider {
 	if endpointURL != "" {
 		opts = append(opts, func(o *ecs.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
-	return &ECSProvider{client: ecs.NewFromConfig(cfg, opts...)}
+	return &ECSProvider{client: ecs.NewFromConfig(cfg, opts...), metrics: cloudwatch.NewFromConfig(cfg)}
 }
 
 func NewECSProviderWithClient(client ECSAPI) *ECSProvider { return &ECSProvider{client: client} }
@@ -84,6 +86,7 @@ func (p *ECSProvider) Tabs() []TabDef {
 		{Label: "Overview", Fetch: p.tabOverview},
 		{Label: "Services", Fetch: p.tabServices},
 		{Label: "Tasks", Fetch: p.tabTasks},
+		{Label: "Metrics", Fetch: p.tabMetrics},
 	}
 }
 
@@ -180,4 +183,16 @@ func (p *ECSProvider) tabTasks(ctx context.Context, item Item) (string, error) {
 		}
 	}
 	return Table([]string{"Task ID", "Status", "Definition", "Containers"}, rows), nil
+}
+
+func (p *ECSProvider) tabMetrics(ctx context.Context, item Item) (string, error) {
+	specs := []metricSpec{
+		{id: "cpu", label: "CPU Utilization", ns: "AWS/ECS", name: "CPUUtilization", stat: "Average", dimKey: "ClusterName", dimVal: item.Name, unit: "%"},
+		{id: "mem", label: "Memory Utilization", ns: "AWS/ECS", name: "MemoryUtilization", stat: "Average", dimKey: "ClusterName", dimVal: item.Name, unit: "%"},
+	}
+	data, err := fetchSparklines(ctx, p.metrics, specs, 1, 60)
+	if err != nil {
+		return "", err
+	}
+	return renderMetricsTab(specs, data, 1, 60), nil
 }

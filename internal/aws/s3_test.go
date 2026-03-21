@@ -137,8 +137,8 @@ func TestS3Provider_Tabs(t *testing.T) {
 	p := awspkg.NewS3ProviderWithClient(stub)
 	tabs := p.Tabs()
 
-	if len(tabs) != 4 {
-		t.Fatalf("got %d tabs, want 4", len(tabs))
+	if len(tabs) != 5 {
+		t.Fatalf("got %d tabs, want 5", len(tabs))
 	}
 
 	item := awspkg.Item{ID: "my-bucket", Name: "my-bucket"}

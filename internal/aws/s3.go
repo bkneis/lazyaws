@@ -13,6 +13,7 @@ import (
 
 	smithygo "github.com/aws/smithy-go"
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
@@ -56,6 +57,7 @@ type S3ObjectItem struct {
 // S3Provider implements Provider for Amazon S3.
 type S3Provider struct {
 	client       S3API
+	metrics      CloudWatchMetricsAPI
 	region       string
 	objectsMu    sync.RWMutex
 	lastObjects  []S3ObjectItem
@@ -71,7 +73,7 @@ func NewS3Provider(cfg awssdk.Config, endpointURL string) *S3Provider {
 			o.UsePathStyle = true
 		})
 	}
-	return &S3Provider{client: s3.NewFromConfig(cfg, opts...), region: cfg.Region}
+	return &S3Provider{client: s3.NewFromConfig(cfg, opts...), metrics: cloudwatch.NewFromConfig(cfg), region: cfg.Region}
 }
 
 func NewS3ProviderWithClient(client S3API) *S3Provider { return &S3Provider{client: client} }
@@ -117,7 +119,24 @@ func (p *S3Provider) Tabs() []TabDef {
 		{Label: "Objects", Fetch: p.tabObjects},
 		{Label: "Policy", Fetch: p.tabPolicy},
 		{Label: "Content", Fetch: p.tabContent},
+		{Label: "Metrics", Fetch: p.tabMetrics},
 	}
+}
+
+func (p *S3Provider) tabMetrics(ctx context.Context, item Item) (string, error) {
+	// S3 metrics have daily granularity and require a StorageType second dimension.
+	specs := []metricSpec{
+		{id: "size", label: "Bucket Size", ns: "AWS/S3", name: "BucketSizeBytes", stat: "Average",
+			dimKey: "BucketName", dimVal: item.ID, dim2Key: "StorageType", dim2Val: "StandardStorage", unit: "B"},
+		{id: "objects", label: "Object Count", ns: "AWS/S3", name: "NumberOfObjects", stat: "Average",
+			dimKey: "BucketName", dimVal: item.ID, dim2Key: "StorageType", dim2Val: "AllStorageTypes"},
+	}
+	// 14-day window with 1-day period (86400s)
+	data, err := fetchSparklines(ctx, p.metrics, specs, 14*24, 86400)
+	if err != nil {
+		return "", err
+	}
+	return renderMetricsTab(specs, data, 14*24, 86400), nil
 }
 
 func (p *S3Provider) tabOverview(ctx context.Context, item Item) (string, error) {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 )
 
@@ -14,14 +15,17 @@ type RDSAPI interface {
 	DescribeDBSnapshots(ctx context.Context, in *rds.DescribeDBSnapshotsInput, opts ...func(*rds.Options)) (*rds.DescribeDBSnapshotsOutput, error)
 }
 
-type RDSProvider struct{ client RDSAPI }
+type RDSProvider struct {
+	client  RDSAPI
+	metrics CloudWatchMetricsAPI
+}
 
 func NewRDSProvider(cfg awssdk.Config, endpointURL string) *RDSProvider {
 	var opts []func(*rds.Options)
 	if endpointURL != "" {
 		opts = append(opts, func(o *rds.Options) { o.BaseEndpoint = awssdk.String(endpointURL) })
 	}
-	return &RDSProvider{client: rds.NewFromConfig(cfg, opts...)}
+	return &RDSProvider{client: rds.NewFromConfig(cfg, opts...), metrics: cloudwatch.NewFromConfig(cfg)}
 }
 
 func NewRDSProviderWithClient(client RDSAPI) *RDSProvider { return &RDSProvider{client: client} }
@@ -68,7 +72,23 @@ func (p *RDSProvider) Tabs() []TabDef {
 		{Label: "Connectivity", Fetch: p.tabConnectivity},
 		{Label: "Config", Fetch: p.tabConfig},
 		{Label: "Snapshots", Fetch: p.tabSnapshots},
+		{Label: "Metrics", Fetch: p.tabMetrics},
 	}
+}
+
+func (p *RDSProvider) tabMetrics(ctx context.Context, item Item) (string, error) {
+	specs := []metricSpec{
+		{id: "cpu", label: "CPU Utilization", ns: "AWS/RDS", name: "CPUUtilization", stat: "Average", dimKey: "DBInstanceIdentifier", dimVal: item.ID, unit: "%"},
+		{id: "conns", label: "Connections", ns: "AWS/RDS", name: "DatabaseConnections", stat: "Average", dimKey: "DBInstanceIdentifier", dimVal: item.ID},
+		{id: "storage", label: "Free Storage", ns: "AWS/RDS", name: "FreeStorageSpace", stat: "Average", dimKey: "DBInstanceIdentifier", dimVal: item.ID, unit: "B"},
+		{id: "readiops", label: "Read IOPS", ns: "AWS/RDS", name: "ReadIOPS", stat: "Average", dimKey: "DBInstanceIdentifier", dimVal: item.ID, unit: "/s"},
+		{id: "writeiops", label: "Write IOPS", ns: "AWS/RDS", name: "WriteIOPS", stat: "Average", dimKey: "DBInstanceIdentifier", dimVal: item.ID, unit: "/s"},
+	}
+	data, err := fetchSparklines(ctx, p.metrics, specs, 6, 300)
+	if err != nil {
+		return "", err
+	}
+	return renderMetricsTab(specs, data, 6, 300), nil
 }
 
 func (p *RDSProvider) describeInstance(ctx context.Context, id string) (*rds.DescribeDBInstancesOutput, error) {
