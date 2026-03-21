@@ -10,11 +10,11 @@ export AWS_DEFAULT_REGION=us-east-1
 
 AWS="aws --endpoint-url=http://localhost:4567 --no-cli-pager --output json"
 
-echo "⏳ Waiting for LocalStack to be ready..."
-until curl -sf http://localhost:4567/_localstack/health | grep -q '"s3": "available"'; do
-  sleep 1
-done
-echo "✅ LocalStack ready"
+# echo "⏳ Waiting for LocalStack to be ready..."
+# until curl -sf http://localhost:4567/_localstack/health | grep -q '"s3": "available"'; do
+#   sleep 1
+# done
+# echo "✅ LocalStack ready"
 
 # ── Teardown (idempotent — all errors suppressed) ─────────────────────────────
 echo "🧹 Clearing previous state..."

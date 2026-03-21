@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  A terminal UI for browsing AWS resources — inspired by
+  A terminal UI for managing AWS resources — inspired by
   <a href="https://github.com/jesseduffield/lazygit">lazygit</a> and
   <a href="https://github.com/jesseduffield/lazydocker">lazydocker</a>.
 </p>
@@ -23,13 +23,15 @@
 
 ---
 
+The aim of this project is to make it easier to navigate, observe and manage your infrastucture, whether in the wild or locally during the development.
+
 ## Why
 
 The AWS CLI is powerful but slow for exploratory workflows. Finding a Lambda's env vars, checking a CloudFormation stack's outputs, or inspecting an SQS dead-letter queue means multiple commands with long argument lists.
 
-`lazyaws` puts all of that in a three-panel TUI you can navigate in seconds — no flags to remember, no context-switching to the browser console.
+`lazyaws` puts all of that in a three-panel TUI you can navigate in seconds — no flags to remember, no context-switching to the browser console and waiting for static assets to load.
 
-It pairs naturally with **LocalStack-based development**: run `lazyaws -local` or `lazyaws -entrypoint-url=<aws control plane>` to inspect your emulated AWS environment in real time, the same way you'd use `lazydocker` to inspect containers. It also works great as a lightweight **read-only monitoring tool** against real AWS environments with fast grep like search, without the need to be loading any static assets.
+It pairs naturally with **LocalStack-based development**: run `lazyaws -local` or `lazyaws -entrypoint-url=<aws control plane>` to inspect your emulated AWS environment in real time, the same way you'd use `lazydocker` to inspect containers.
 
 ## Install
 
@@ -51,6 +53,18 @@ lazyaws -local
 
 AWS credentials are loaded from the standard chain (`AWS_*` environment variables, `~/.aws/credentials`, IAM instance role, etc.).
 
+## Cool Features
+
+- Fast grep like search across your infrastucture using `/`
+- Cloudwatch Logs Viewer
+- S3 Explorer with ability to view text / json files and download items
+- DynamoDB viewer for easily inspecting JSON objects
+- Cross resource linking, click underscored hyperlinks in resource lists to jump to that resouce
+- Point it at any AWS control plane such as localstack using --entrypoint-url
+- Completely clickable TUI, no need to learn keyboard shortcuts if you don't want to
+- Single binary ~28mb that works across window, linux and mac 32/64bit
+- Doesn't require aws cli to be installed or use any porcelin command processing, entirely built using go aws sdk and uses your local authentication configured
+
 ## Keybindings
 
 | Key | Action |
@@ -60,17 +74,6 @@ AWS credentials are loaded from the standard chain (`AWS_*` environment variable
 | `[` / `]` | Previous / next detail tab |
 | `r` | Refresh current resource list |
 | `q` | Quit |
-
-## Cool Features
-
-- S3 Explorer with ability to view text / json files and download items
-- Cloudwatch Logs Viewer
-- DynamoDB viewer for easily inspecting JSON objects
-- Completely clickable TUI, no need to learn keyboard shortcuts if you don't want to
-- Cross resource linking, click underscored hyperlinks in resource lists to jump to that resouce
-- Single binary ~28mb that works across window, linux and mac 32/64bit
-- Point it at any AWS control plane such as localstack using --entrypoint-url
-- Doesn't require aws cli to be installed or use any porcelin command processing, entirely built using go aws sdk and uses your local authentication configured
 
 ## Supported Services
 

@@ -46,7 +46,15 @@ func setupKeys(a *App) {
 			return event
 		}
 
+		// Pass all rune events through to the modal if one is visible.
+		if name, _ := a.rootPages.GetFrontPage(); name != "main" {
+			return event
+		}
+
 		switch event.Rune() {
+		case 'x':
+			a.openActionsMenu()
+			return nil
 		case '/':
 			a.enterSearch()
 			return nil

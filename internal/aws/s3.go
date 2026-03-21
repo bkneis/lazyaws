@@ -54,6 +54,7 @@ type S3ObjectItem struct {
 // S3Provider implements Provider for Amazon S3.
 type S3Provider struct {
 	client       S3API
+	region       string
 	objectsMu    sync.RWMutex
 	lastObjects  []S3ObjectItem
 	selectedKey  string
@@ -68,7 +69,7 @@ func NewS3Provider(cfg awssdk.Config, endpointURL string) *S3Provider {
 			o.UsePathStyle = true
 		})
 	}
-	return &S3Provider{client: s3.NewFromConfig(cfg, opts...)}
+	return &S3Provider{client: s3.NewFromConfig(cfg, opts...), region: cfg.Region}
 }
 
 func NewS3ProviderWithClient(client S3API) *S3Provider { return &S3Provider{client: client} }

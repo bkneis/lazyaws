@@ -64,3 +64,35 @@ func filterItems(items []Item, query string) []Item {
 	}
 	return out
 }
+
+// ActionContext is passed to action funcs to interact with the UI.
+// All methods are safe to call from goroutines — they schedule via QueueUpdateDraw.
+type ActionContext interface {
+	// Confirm shows a Yes/No dialog. Default focused button is No.
+	Confirm(message string, onConfirm func())
+	// ConfirmDelete shows a delete dialog requiring the user to type "delete me"
+	// before the Delete button is enabled. Default focus is Cancel.
+	ConfirmDelete(resourceName string, onConfirm func())
+	// PromptInput shows a single-field input dialog.
+	PromptInput(label string, placeholder string, onSubmit func(value string))
+	// ShowError displays an error modal.
+	ShowError(err error)
+	// ShowInfo displays an informational message modal.
+	ShowInfo(message string)
+	// Refresh reloads the current provider's item list.
+	Refresh()
+}
+
+// ActionDef describes a single operation shown in the x actions menu.
+type ActionDef struct {
+	Label string // e.g. "Delete bucket"
+	Key   rune   // optional shortcut shown in menu; 0 = none
+	Func  func(ctx context.Context, item Item, ac ActionContext) error
+}
+
+// Actionable is an optional interface providers implement to expose write ops.
+// Actions is called with the currently selected item (or Item{} if none selected).
+// Returning nil/empty means no menu is shown.
+type Actionable interface {
+	Actions(item Item) []ActionDef
+}

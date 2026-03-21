@@ -8,3 +8,10 @@ I can't remember all the aws commands and it slows me down asking claude, I want
 # design
 
 exactly like lazygit / lazydocker with ability to tab through diffent panes for the different resources. AWS resources listed on the left with a list on the right then ability to view the value of the item
+
+# issues
+
+- route32 add entry, failed not asking for anything more than name, there are likely other required params. Check all the actions for required or optional parameters that users likely will want to set
+- upload file timeout for S3
+- kinesis stream create fails
+- the three errors above showed no error logs in the log file, make sure aws sdk usage is being tracked. Log any request made to AWS using the SDK and ensure any errors are logged

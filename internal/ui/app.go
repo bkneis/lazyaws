@@ -54,6 +54,7 @@ type App struct {
 	tabLinks          [][]linkRef // per-tab extracted links, parallel to tabCache
 	tabRawCache       []string    // per-tab raw content before link marker stripping
 	navStack           []navState
+	rootPages          *tview.Pages
 	selectedObjectRow  int
 	cachedObjects      []awspkg.S3ObjectItem
 	selectedDynamoRow  int
@@ -221,7 +222,8 @@ func (a *App) build() {
 	setupKeys(a)
 
 	a.tapp.EnableMouse(true)
-	a.tapp.SetRoot(outer, true).SetFocus(a.panels.resources)
+	a.rootPages = tview.NewPages().AddPage("main", outer, true, true)
+	a.tapp.SetRoot(a.rootPages, true).SetFocus(a.panels.resources)
 }
 
 // loadItems fetches items for provider i in a background goroutine.
@@ -730,6 +732,10 @@ func (a *App) showStatusMessage(msg string) {
 // handleEsc implements the Esc priority: navStack > pass-through.
 // Returns true if the event was consumed.
 func (a *App) handleEsc() bool {
+	if name, _ := a.rootPages.GetFrontPage(); name == modalPageName {
+		a.popModal()
+		return true
+	}
 	if a.navigateBack() {
 		return true
 	}
