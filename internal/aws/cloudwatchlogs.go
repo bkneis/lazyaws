@@ -18,7 +18,7 @@ type CloudWatchLogsAPI interface {
 	GetLogEvents(ctx context.Context, in *cloudwatchlogs.GetLogEventsInput, opts ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetLogEventsOutput, error)
 	// OpenLiveTailStream starts a live tail session and returns the event stream reader.
 	// It abstracts StartLiveTailOutput.GetStream() so the interface is directly testable.
-	OpenLiveTailStream(ctx context.Context, group string) (cloudwatchlogs.StartLiveTailResponseStreamReader, error)
+	OpenLiveTailStream(ctx context.Context, groups []string) (cloudwatchlogs.StartLiveTailResponseStreamReader, error)
 }
 
 // CWLogStreamRow holds the displayable columns for a single log stream.
@@ -45,9 +45,9 @@ func (a *cwlClientAdapter) GetLogEvents(ctx context.Context, in *cloudwatchlogs.
 	return a.client.GetLogEvents(ctx, in, opts...)
 }
 
-func (a *cwlClientAdapter) OpenLiveTailStream(ctx context.Context, group string) (cloudwatchlogs.StartLiveTailResponseStreamReader, error) {
+func (a *cwlClientAdapter) OpenLiveTailStream(ctx context.Context, groups []string) (cloudwatchlogs.StartLiveTailResponseStreamReader, error) {
 	out, err := a.client.StartLiveTail(ctx, &cloudwatchlogs.StartLiveTailInput{
-		LogGroupIdentifiers: []string{group},
+		LogGroupIdentifiers: groups,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start live tail: %w", err)
@@ -233,12 +233,44 @@ func (p *CloudWatchLogsProvider) StartTail(ctx context.Context, group, streamNam
 
 // tailGroup uses StartLiveTail for real-time group-wide events.
 func (p *CloudWatchLogsProvider) tailGroup(ctx context.Context, group string, onEvent func(ts int64, group, stream, msg string)) error {
-	reader, err := p.client.OpenLiveTailStream(ctx, group)
+	reader, err := p.client.OpenLiveTailStream(ctx, []string{group})
 	if err != nil {
 		return err
 	}
 	defer reader.Close()
 
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case event, ok := <-reader.Events():
+			if !ok {
+				return reader.Err()
+			}
+			if ev, ok := event.(*cwltypes.StartLiveTailResponseStreamMemberSessionUpdate); ok {
+				for _, le := range ev.Value.SessionResults {
+					ts := int64(0)
+					if le.Timestamp != nil {
+						ts = *le.Timestamp
+					}
+					onEvent(ts,
+						awssdk.ToString(le.LogGroupIdentifier),
+						awssdk.ToString(le.LogStreamName),
+						strings.TrimRight(awssdk.ToString(le.Message), "\n"),
+					)
+				}
+			}
+		}
+	}
+}
+
+// StartTailGroups tails multiple log groups simultaneously via StartLiveTail.
+func (p *CloudWatchLogsProvider) StartTailGroups(ctx context.Context, groups []string, onEvent func(ts int64, group, stream, msg string)) error {
+	reader, err := p.client.OpenLiveTailStream(ctx, groups)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
 	for {
 		select {
 		case <-ctx.Done():

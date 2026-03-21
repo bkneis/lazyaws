@@ -66,6 +66,7 @@ type App struct {
 	selectedCWStreamRow int
 	cwTailEvents        []cwTailEvent
 	cwTailCancel        context.CancelFunc
+	cwTailGroups        []string // non-nil + non-empty means multi-group tail is active
 }
 
 type cwTailEvent struct {
@@ -230,6 +231,7 @@ func (a *App) build() {
 // Pass query="" to load all items with no filter.
 func (a *App) loadItems(i int, query string) {
 	a.stopCWTailStream()
+	a.cwTailGroups = nil
 	a.cachedCWLogStreams = nil
 	a.selectedCWStreamRow = 0
 	a.tabLoaded = nil
@@ -312,6 +314,7 @@ func (a *App) restoreFocus() {
 // selectItem resets tab state and loads the first tab for the selected item.
 func (a *App) selectItem(providerIdx int, item awspkg.Item) {
 	a.stopCWTailStream()
+	a.cwTailGroups = nil
 	a.cachedCWLogStreams = nil
 	a.selectedCWStreamRow = 0
 	a.currentItem = item
@@ -919,8 +922,9 @@ func (a *App) moveCWStreamRow(delta int) {
 	a.renderDetail()
 }
 
-// startCWTailStream cancels any existing stream and starts a new one for the
-// current log group, filtered to the selected stream (if any).
+// startCWTailStream cancels any existing stream and starts a new one.
+// When cwTailGroups is set it tails all groups simultaneously; otherwise it
+// tails the current item's group (filtered to the selected stream if any).
 func (a *App) startCWTailStream() {
 	if a.cwTailCancel != nil {
 		a.cwTailCancel()
@@ -930,30 +934,42 @@ func (a *App) startCWTailStream() {
 	if !ok {
 		return
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	a.cwTailCancel = cancel
+
+	appendEvent := func(ts int64, group, stream, msg string) {
+		a.tapp.QueueUpdateDraw(func() {
+			a.cwTailEvents = append(a.cwTailEvents, cwTailEvent{
+				ts:     time.UnixMilli(ts),
+				group:  group,
+				stream: stream,
+				msg:    msg,
+			})
+			if len(a.cwTailEvents) > 200 {
+				a.cwTailEvents = a.cwTailEvents[1:]
+			}
+			if a.isCWLogsTailActive() {
+				a.renderDetail()
+			}
+		})
+	}
+
+	if len(a.cwTailGroups) > 0 {
+		groups := a.cwTailGroups
+		go func() {
+			cwlp.StartTailGroups(ctx, groups, appendEvent) //nolint:errcheck
+		}()
+		return
+	}
+
 	group := a.currentItem.ID
 	stream := ""
 	if len(a.cachedCWLogStreams) > 0 && a.selectedCWStreamRow < len(a.cachedCWLogStreams) {
 		stream = a.cachedCWLogStreams[a.selectedCWStreamRow].Name
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	a.cwTailCancel = cancel
 	go func() {
-		cwlp.StartTail(ctx, group, stream, func(ts int64, group, stream, msg string) { //nolint:errcheck
-			a.tapp.QueueUpdateDraw(func() {
-				a.cwTailEvents = append(a.cwTailEvents, cwTailEvent{
-					ts:     time.UnixMilli(ts),
-					group:  group,
-					stream: stream,
-					msg:    msg,
-				})
-				if len(a.cwTailEvents) > 200 {
-					a.cwTailEvents = a.cwTailEvents[1:]
-				}
-				if a.isCWLogsTailActive() {
-					a.renderDetail()
-				}
-			})
-		})
+		cwlp.StartTail(ctx, group, stream, appendEvent) //nolint:errcheck
 	}()
 }
 
@@ -1075,14 +1091,22 @@ func (a *App) renderCWLogTail() string {
 	ht := a.theme.HeaderTag
 	var sb strings.Builder
 
-	stream := ""
-	if len(a.cachedCWLogStreams) > 0 && a.selectedCWStreamRow < len(a.cachedCWLogStreams) {
-		stream = a.cachedCWLogStreams[a.selectedCWStreamRow].Name
+	if len(a.cwTailGroups) > 0 {
+		fmt.Fprintf(&sb, "  %sGroups%s\n", ht, "[-]")
+		for _, g := range a.cwTailGroups {
+			fmt.Fprintf(&sb, "    %s\n", g)
+		}
+	} else {
+		stream := ""
+		if len(a.cachedCWLogStreams) > 0 && a.selectedCWStreamRow < len(a.cachedCWLogStreams) {
+			stream = a.cachedCWLogStreams[a.selectedCWStreamRow].Name
+		}
+		fmt.Fprintf(&sb, "  %sGroup%s   %s\n", ht, "[-]", a.currentItem.ID)
+		if stream != "" {
+			fmt.Fprintf(&sb, "  %sStream%s  %s\n", ht, "[-]", stream)
+		}
 	}
-	fmt.Fprintf(&sb, "  %sGroup%s   %s\n", ht, "[-]", a.currentItem.ID)
-	if stream != "" {
-		fmt.Fprintf(&sb, "  %sStream%s  %s\n", ht, "[-]", stream)
-	}
+
 	status := "streaming…"
 	if a.cwTailCancel == nil {
 		status = "idle"
@@ -1093,7 +1117,11 @@ func (a *App) renderCWLogTail() string {
 		sb.WriteString("  Waiting for events…\n")
 	}
 	for _, ev := range a.cwTailEvents {
-		fmt.Fprintf(&sb, "  %s  %s\n", ev.ts.UTC().Format("15:04:05"), ev.msg)
+		if len(a.cwTailGroups) > 1 {
+			fmt.Fprintf(&sb, "  %s  [%s]  %s\n", ev.ts.UTC().Format("15:04:05"), ev.group, ev.msg)
+		} else {
+			fmt.Fprintf(&sb, "  %s  %s\n", ev.ts.UTC().Format("15:04:05"), ev.msg)
+		}
 	}
 	return sb.String()
 }

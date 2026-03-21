@@ -31,32 +31,41 @@ func (a *cwlClientAdapter) PutRetentionPolicy(ctx context.Context, in *cloudwatc
 
 // Actions implements Actionable for CloudWatchLogsProvider.
 func (p *CloudWatchLogsProvider) Actions(item Item) []ActionDef {
-	wc, ok := p.client.(CWLActionsAPI)
-	if !ok {
-		return nil
-	}
-
 	actions := []ActionDef{
 		{
-			Label: "Create log group",
-			Key:   'c',
+			Label: "Stream multiple log groups",
+			Key:   'm',
 			Func: func(ctx context.Context, item Item, ac ActionContext) error {
-				ac.PromptInput("Log group name", "", func(name string) {
-					go func() {
-						_, err := wc.CreateLogGroup(context.Background(), &cloudwatchlogs.CreateLogGroupInput{
-							LogGroupName: awssdk.String(name),
-						})
-						if err != nil {
-							ac.ShowError(err)
-							return
-						}
-						ac.Refresh()
-					}()
-				})
+				ac.OpenMultiGroupPicker(func(selected []string) {})
 				return nil
 			},
 		},
 	}
+
+	wc, ok := p.client.(CWLActionsAPI)
+	if !ok {
+		return actions
+	}
+
+	actions = append(actions, ActionDef{
+		Label: "Create log group",
+		Key:   'c',
+		Func: func(ctx context.Context, item Item, ac ActionContext) error {
+			ac.PromptInput("Log group name", "", func(name string) {
+				go func() {
+					_, err := wc.CreateLogGroup(context.Background(), &cloudwatchlogs.CreateLogGroupInput{
+						LogGroupName: awssdk.String(name),
+					})
+					if err != nil {
+						ac.ShowError(err)
+						return
+					}
+					ac.Refresh()
+				}()
+			})
+			return nil
+		},
+	})
 
 	if item.ID != "" {
 		actions = append(actions,

@@ -32,7 +32,7 @@ func (s *stubCWLogs) GetLogEvents(_ context.Context, _ *cloudwatchlogs.GetLogEve
 	return &cloudwatchlogs.GetLogEventsOutput{Events: s.logEvents}, nil
 }
 
-func (s *stubCWLogs) OpenLiveTailStream(_ context.Context, _ string) (cloudwatchlogs.StartLiveTailResponseStreamReader, error) {
+func (s *stubCWLogs) OpenLiveTailStream(_ context.Context, _ []string) (cloudwatchlogs.StartLiveTailResponseStreamReader, error) {
 	return newStubStreamReader(s.tailUpdates), nil
 }
 

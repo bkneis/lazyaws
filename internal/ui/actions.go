@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	awspkg "github.com/bryanl/lazyaws/internal/aws"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -124,6 +126,17 @@ func (ac *appActionContext) Refresh() {
 	})
 }
 
+// OpenMultiGroupPicker opens the multi-select log group picker modal.
+func (ac *appActionContext) OpenMultiGroupPicker(onConfirm func([]string)) {
+	groups := make([]string, len(ac.app.loadedItems))
+	for i, item := range ac.app.loadedItems {
+		groups[i] = item.ID
+	}
+	ac.app.tapp.QueueUpdateDraw(func() {
+		ac.app.openMultiGroupPicker(groups, onConfirm)
+	})
+}
+
 // openActionsMenu opens the x actions menu for the current provider/item.
 // Returns true if the menu was opened, false if not (e.g., provider is not Actionable).
 func (a *App) openActionsMenu() bool {
@@ -208,4 +221,156 @@ func (a *App) popModal() {
 	a.rootPages.RemovePage(modalPageName)
 	a.panels.focused = 1
 	a.tapp.SetFocus(a.panels.items)
+}
+
+// openMultiGroupPicker opens a two-panel multi-select modal for picking log groups.
+func (a *App) openMultiGroupPicker(allGroups []string, onConfirm func([]string)) {
+	var selected []string
+	filterQuery := ""
+
+	filteredGroups := func() []string {
+		q := strings.ToLower(filterQuery)
+		var result []string
+		for _, g := range allGroups {
+			if q == "" || strings.Contains(strings.ToLower(g), q) {
+				result = append(result, g)
+				if len(result) == 10 {
+					break
+				}
+			}
+		}
+		return result
+	}
+
+	availList := tview.NewList().ShowSecondaryText(false)
+	availList.SetSelectedTextColor(a.theme.SelectionText).SetSelectedBackgroundColor(a.theme.FocusColor)
+
+	selectedList := tview.NewList().ShowSecondaryText(false)
+	selectedList.SetSelectedTextColor(a.theme.SelectionText).SetSelectedBackgroundColor(a.theme.FocusColor)
+
+	filterInput := tview.NewInputField().SetLabel("/ ").SetLabelColor(tcell.ColorYellow)
+
+	rebuildAvail := func() {
+		availList.Clear()
+		for _, g := range filteredGroups() {
+			g := g
+			availList.AddItem(g, "", 0, nil)
+		}
+		title := fmt.Sprintf(" Available (%d shown) ", availList.GetItemCount())
+		availList.SetBorder(true).SetTitle(title)
+	}
+
+	rebuildSelected := func() {
+		selectedList.Clear()
+		for _, g := range selected {
+			g := g
+			selectedList.AddItem(g, "", 0, nil)
+		}
+		selectedList.SetBorder(true).SetTitle(fmt.Sprintf(" Selected (%d) ", len(selected)))
+	}
+
+	confirm := func() {
+		if len(selected) == 0 {
+			return
+		}
+		a.popModal()
+		a.cwTailGroups = selected
+		a.cwTailEvents = nil
+		tabs := a.providers[a.activeProvider].Tabs()
+		for i, t := range tabs {
+			if t.Label == "Tail" {
+				a.selectTab(i)
+				break
+			}
+		}
+		onConfirm(selected)
+	}
+
+	availList.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Rune() {
+		case ' ':
+			cur := availList.GetCurrentItem()
+			if cur >= 0 && cur < availList.GetItemCount() {
+				name, _ := availList.GetItemText(cur)
+				if !containsStr(selected, name) {
+					selected = append(selected, name)
+					rebuildSelected()
+				}
+			}
+			return nil
+		case '/':
+			a.tapp.SetFocus(filterInput)
+			return nil
+		}
+		if event.Key() == tcell.KeyTab {
+			a.tapp.SetFocus(selectedList)
+			return nil
+		}
+		if event.Key() == tcell.KeyEnter {
+			confirm()
+			return nil
+		}
+		return event
+	})
+
+	selectedList.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Rune() == ' ' {
+			cur := selectedList.GetCurrentItem()
+			if cur >= 0 && cur < selectedList.GetItemCount() {
+				name, _ := selectedList.GetItemText(cur)
+				selected = removeStr(selected, name)
+				rebuildSelected()
+			}
+			return nil
+		}
+		if event.Key() == tcell.KeyTab {
+			a.tapp.SetFocus(availList)
+			return nil
+		}
+		if event.Key() == tcell.KeyEnter {
+			confirm()
+			return nil
+		}
+		return event
+	})
+
+	filterInput.SetChangedFunc(func(text string) {
+		filterQuery = text
+		rebuildAvail()
+	})
+	filterInput.SetDoneFunc(func(_ tcell.Key) {
+		a.tapp.SetFocus(availList)
+	})
+
+	leftFlex := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(availList, 0, 1, true).
+		AddItem(filterInput, 1, 0, false)
+
+	flex := tview.NewFlex().
+		AddItem(leftFlex, 0, 1, true).
+		AddItem(selectedList, 0, 1, false)
+	flex.SetBorder(true).SetTitle(" Stream multiple log groups  (space: toggle · /: filter · tab: switch · enter: start) ")
+
+	rebuildAvail()
+	rebuildSelected()
+	a.pushModal(flex, 90, 20)
+}
+
+func containsStr(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func removeStr(ss []string, s string) []string {
+	out := ss[:0:0]
+	for _, v := range ss {
+		if v != s {
+			out = append(out, v)
+		}
+	}
+	return out
 }
