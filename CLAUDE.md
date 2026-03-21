@@ -95,6 +95,40 @@ if errors.As(err, &apiErr) && apiErr.ErrorCode() == "NoSuchBucketPolicy" { ... }
 ```
 Import: `smithygo "github.com/aws/smithy-go"`.
 
+### Actions System
+
+Providers can expose write operations and shell-out actions via the `Actionable` interface:
+
+```go
+type Actionable interface {
+    Actions(item Item) []ActionDef
+}
+
+type ActionDef struct {
+    Label string
+    Key   rune   // shortcut shown in menu; 0 = none
+    Func  func(ctx context.Context, item Item, ac ActionContext) error
+}
+```
+
+The `ActionContext` interface provides:
+- `Confirm(message, onConfirm)` — Yes/No dialog
+- `ConfirmDelete(resourceName, onConfirm)` — requires typing "delete me"
+- `PromptInput(label, placeholder, onSubmit)` — single-field input; `placeholder` is pre-filled
+- `ShowError(err)` / `ShowInfo(message)` — modal display
+- `Refresh()` — reload the current provider's item list
+- `SuspendAndRun(fn)` — suspend TUI, run fn with full terminal control, resume on exit
+
+**SuspendAndRun** is the key primitive for shell-out features (SSH, DB shells, container exec). Use it to hand terminal control to external processes (`ssh`, `psql`, `aws ecs execute-command`, etc.) then restore the TUI cleanly.
+
+Actions that don't need SDK write ops (e.g. Connect/SSH) should be returned unconditionally from `Actions()`, before the type assertion for write-capable clients. This way they work even with read-only test clients.
+
+Action files follow the pattern `internal/aws/<service>_actions.go` and define a `<Service>ActionsAPI` interface containing only write methods. Examples:
+- `ec2_actions.go` — Start/Stop/Reboot/Terminate instances + SSH/SSM Connect
+- `rds_actions.go` — Start/Stop/Reboot/Snapshot/Delete DB + Enter DB shell (psql/mysql)
+- `lambda_actions.go` — Invoke + Delete function
+- `ecs_actions.go` — Exec into container via `aws ecs execute-command`
+
 ### EC2/ASG/SG/Volume/Image: Meta-JSON Pattern
 
 These providers marshal the full SDK struct into `item.Meta["instance_json"]` (or `sg_json`, `asg_json`, etc.) during `ListItems` for zero-cost tab rendering. Tabs use `instanceFromMeta(item)` instead of additional API calls. Pointer fields on the unmarshalled struct (e.g. `inst.State *InstanceState`) must be nil-checked before dereferencing.

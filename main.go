@@ -94,6 +94,8 @@ func main() {
 			awspkg.NewELBProvider(c, endpoint),
 			awspkg.NewASGProvider(c, endpoint),
 			awspkg.NewRDSProvider(c, endpoint),
+			awspkg.NewECSProvider(c, endpoint),
+			awspkg.NewSSMProvider(c, endpoint),
 		}
 	}
 

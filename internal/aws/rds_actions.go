@@ -3,10 +3,35 @@ package aws
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"strings"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 )
+
+// rdsInferConnect builds a DB shell command from instance meta.
+// Maps engine type to the appropriate CLI tool (psql/mysql).
+func rdsInferConnect(item Item) string {
+	engine := item.Meta["engine_type"]
+	endpoint := item.Meta["endpoint"]
+	port := item.Meta["port"]
+	user := item.Meta["master_username"]
+
+	if endpoint == "" {
+		return ""
+	}
+
+	switch {
+	case strings.HasPrefix(engine, "postgres"), strings.HasPrefix(engine, "aurora-postgresql"):
+		return fmt.Sprintf("psql -h %s -p %s -U %s", endpoint, port, user)
+	case strings.HasPrefix(engine, "mysql"), strings.HasPrefix(engine, "aurora-mysql"), engine == "mariadb":
+		return fmt.Sprintf("mysql -h %s -P %s -u %s -p", endpoint, port, user)
+	default:
+		return ""
+	}
+}
 
 // RDSActionsAPI defines write operations needed by the RDS actions menu.
 type RDSActionsAPI interface {
@@ -22,11 +47,40 @@ func (p *RDSProvider) Actions(item Item) []ActionDef {
 	if item.ID == "" {
 		return nil
 	}
+
+	// Enter shell is always available — pure shell-out, no SDK write ops needed.
+	actions := []ActionDef{
+		{
+			Label: "Enter DB shell",
+			Key:   'e',
+			Func: func(ctx context.Context, item Item, ac ActionContext) error {
+				cmd := rdsInferConnect(item)
+				if cmd == "" {
+					cmd = "psql -h <endpoint> -p 5432 -U <user>"
+				}
+				ac.PromptInput("DB connect command", cmd, func(command string) {
+					ac.SuspendAndRun(func() {
+						parts := strings.Fields(command)
+						if len(parts) == 0 {
+							return
+						}
+						c := exec.Command(parts[0], parts[1:]...)
+						c.Stdin = os.Stdin
+						c.Stdout = os.Stdout
+						c.Stderr = os.Stderr
+						_ = c.Run()
+					})
+				})
+				return nil
+			},
+		},
+	}
+
 	wc, ok := p.client.(RDSActionsAPI)
 	if !ok {
-		return nil
+		return actions
 	}
-	return []ActionDef{
+	return append(actions, []ActionDef{
 		{
 			Label: "Start DB instance",
 			Key:   's',
@@ -124,5 +178,5 @@ func (p *RDSProvider) Actions(item Item) []ActionDef {
 				return nil
 			},
 		},
-	}
+	}...)
 }

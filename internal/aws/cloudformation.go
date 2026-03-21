@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -133,6 +134,20 @@ func (p *CFProvider) tabOutputs(ctx context.Context, item Item) (string, error) 
 	return KV(pairs), nil
 }
 
+// cfnStatusColor returns a tview color tag for a CloudFormation resource status.
+func cfnStatusColor(status string) string {
+	switch {
+	case strings.HasSuffix(status, "_COMPLETE") && !strings.Contains(status, "ROLLBACK"):
+		return "[green]"
+	case strings.HasSuffix(status, "_FAILED"), strings.Contains(status, "ROLLBACK"):
+		return "[red]"
+	case strings.HasSuffix(status, "_IN_PROGRESS"):
+		return "[yellow]"
+	default:
+		return ""
+	}
+}
+
 func (p *CFProvider) tabEvents(ctx context.Context, item Item) (string, error) {
 	out, err := p.client.DescribeStackEvents(ctx, &cloudformation.DescribeStackEventsInput{StackName: awssdk.String(item.ID)})
 	if err != nil {
@@ -147,11 +162,17 @@ func (p *CFProvider) tabEvents(ctx context.Context, item Item) (string, error) {
 		if e.Timestamp != nil {
 			ts = e.Timestamp.Format(time.DateTime)
 		}
+		status := string(e.ResourceStatus)
+		colorTag := cfnStatusColor(status)
+		coloredStatus := status
+		if colorTag != "" {
+			coloredStatus = colorTag + status + "[-]"
+		}
 		rows[i] = []string{
 			ts,
 			awssdk.ToString(e.LogicalResourceId),
 			awssdk.ToString(e.ResourceType),
-			string(e.ResourceStatus),
+			coloredStatus,
 			awssdk.ToString(e.ResourceStatusReason),
 		}
 	}

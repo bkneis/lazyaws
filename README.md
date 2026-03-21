@@ -99,6 +99,7 @@ AWS credentials are loaded from the standard chain (`AWS_*` environment variable
 - Cross resource linking, click underscored hyperlinks in resource lists to jump to that resouce
 - Point it at any AWS control plane such as localstack using --entrypoint-url
 - Completely clickable TUI, no need to learn keyboard shortcuts if you don't want to
+- Connect to EC2, ECS and RDS instances right from your list (requires either AWS SSM or host needs to be addressable form the network)
 - Single binary ~28mb that works across window, linux and mac 32/64bit
 - Doesn't require aws cli to be installed or use any porcelin command processing, entirely built using go aws sdk and uses your local authentication configured
 
@@ -147,6 +148,8 @@ If you find this useful, consider giving it a ⭐ — it helps others discover t
 | EC2 AMIs | Overview, Block devices |
 | Elastic Load Balancers | Overview, Listeners, Target groups |
 | Auto Scaling Groups | Overview, Instances |
+| SSM | Overview, Value, History |
+| ECS | Overivew | Services | Tasks |
 
 ## Contributing
 

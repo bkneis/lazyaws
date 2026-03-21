@@ -37,10 +37,22 @@ func (p *RDSProvider) ListItems(ctx context.Context, query string) ([]Item, erro
 	for i, db := range out.DBInstances {
 		id := awssdk.ToString(db.DBInstanceIdentifier)
 		engine := awssdk.ToString(db.Engine) + " " + awssdk.ToString(db.EngineVersion)
+		endpoint, port := "", ""
+		if db.Endpoint != nil {
+			endpoint = awssdk.ToString(db.Endpoint.Address)
+			port = fmt.Sprintf("%d", awssdk.ToInt32(db.Endpoint.Port))
+		}
 		items[i] = Item{
 			ID:   id,
 			Name: id,
-			Meta: map[string]string{"engine": engine, "status": awssdk.ToString(db.DBInstanceStatus)},
+			Meta: map[string]string{
+				"engine":          engine,
+				"engine_type":     awssdk.ToString(db.Engine),
+				"status":          awssdk.ToString(db.DBInstanceStatus),
+				"endpoint":        endpoint,
+				"port":            port,
+				"master_username": awssdk.ToString(db.MasterUsername),
+			},
 		}
 	}
 	return filterItems(items, query), nil
