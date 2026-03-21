@@ -15,6 +15,7 @@ import "github.com/gdamore/tcell/v2"
 //	]           — next tab in detail pane
 //	q           — quit
 //	r           — refresh current resource list
+//	R           — open region picker
 func setupKeys(a *App) {
 	a.tapp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		searchActive := a.tapp.GetFocus() == a.panels.searchInput
@@ -64,6 +65,9 @@ func setupKeys(a *App) {
 		case 'r':
 			a.refresh()
 			return nil
+		case 'R':
+			a.openRegionPicker()
+			return nil
 		case 'g':
 			if a.isCWLogsActive() {
 				a.openInGonzo()
@@ -82,6 +86,10 @@ func setupKeys(a *App) {
 				a.moveObjectRow(1)
 				return nil
 			}
+			if a.isKinesisShardsTabFocused() {
+				a.moveShardRow(1)
+				return nil
+			}
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
 		case 'k':
 			if a.isCWStreamsTabFocused() {
@@ -94,6 +102,10 @@ func setupKeys(a *App) {
 			}
 			if a.isS3ObjectsTabFocused() {
 				a.moveObjectRow(-1)
+				return nil
+			}
+			if a.isKinesisShardsTabFocused() {
+				a.moveShardRow(-1)
 				return nil
 			}
 			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)

@@ -84,6 +84,9 @@ type ActionContext interface {
 	// OpenMultiGroupPicker opens a multi-select modal showing all loaded log groups.
 	// onConfirm is called with the confirmed selection; the App activates the Tail tab.
 	OpenMultiGroupPicker(onConfirm func(selected []string))
+	// SuspendAndRun suspends the TUI, runs fn synchronously (blocking), then resumes.
+	// Use for launching external processes (e.g. $EDITOR) that need terminal control.
+	SuspendAndRun(fn func())
 }
 
 // ActionDef describes a single operation shown in the x actions menu.

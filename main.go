@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	awspkg "github.com/bkneis/lazyaws/internal/aws"
 	"github.com/bkneis/lazyaws/internal/ui"
 )
@@ -65,34 +66,38 @@ func main() {
 	}
 	awspkg.ActiveTags = awspkg.ColorTags{Header: theme.HeaderTag, Link: theme.LinkTag}
 
-	providers := []awspkg.Provider{
-		awspkg.NewS3Provider(cfg, endpointURL),
-		awspkg.NewLambdaProvider(cfg, endpointURL),
-		awspkg.NewSNSProvider(cfg, endpointURL),
-		awspkg.NewSQSProvider(cfg, endpointURL),
-		awspkg.NewCloudFormationProvider(cfg, endpointURL),
-		awspkg.NewIAMProvider(cfg, endpointURL),
-		awspkg.NewIAMPoliciesProvider(cfg, endpointURL),
-		awspkg.NewSecretsManagerProvider(cfg, endpointURL),
-		awspkg.NewAPIGatewayProvider(cfg, endpointURL),
-		awspkg.NewRoute53Provider(cfg, endpointURL),
-		awspkg.NewACMProvider(cfg, endpointURL),
-		awspkg.NewDynamoDBProvider(cfg, endpointURL),
-		awspkg.NewKinesisProvider(cfg, endpointURL),
-		awspkg.NewKMSProvider(cfg, endpointURL),
-		awspkg.NewStepFunctionsProvider(cfg, endpointURL),
-		awspkg.NewCloudWatchProvider(cfg, endpointURL),
-		awspkg.NewCloudWatchLogsProvider(cfg, endpointURL),
-		awspkg.NewEventBridgeProvider(cfg, endpointURL),
-		awspkg.NewEC2Provider(cfg, endpointURL),
-		awspkg.NewEC2VPCProvider(cfg, endpointURL),
-		awspkg.NewEC2SGProvider(cfg, endpointURL),
-		awspkg.NewEC2VolumesProvider(cfg, endpointURL),
-		awspkg.NewEC2ImagesProvider(cfg, endpointURL),
-		awspkg.NewELBProvider(cfg, endpointURL),
-		awspkg.NewASGProvider(cfg, endpointURL),
-		awspkg.NewRDSProvider(cfg, endpointURL),
+	buildProviders := func(c awssdk.Config, endpoint string) []awspkg.Provider {
+		return []awspkg.Provider{
+			awspkg.NewS3Provider(c, endpoint),
+			awspkg.NewLambdaProvider(c, endpoint),
+			awspkg.NewSNSProvider(c, endpoint),
+			awspkg.NewSQSProvider(c, endpoint),
+			awspkg.NewCloudFormationProvider(c, endpoint),
+			awspkg.NewIAMProvider(c, endpoint),
+			awspkg.NewIAMPoliciesProvider(c, endpoint),
+			awspkg.NewSecretsManagerProvider(c, endpoint),
+			awspkg.NewAPIGatewayProvider(c, endpoint),
+			awspkg.NewRoute53Provider(c, endpoint),
+			awspkg.NewACMProvider(c, endpoint),
+			awspkg.NewDynamoDBProvider(c, endpoint),
+			awspkg.NewKinesisProvider(c, endpoint),
+			awspkg.NewKMSProvider(c, endpoint),
+			awspkg.NewStepFunctionsProvider(c, endpoint),
+			awspkg.NewCloudWatchProvider(c, endpoint),
+			awspkg.NewCloudWatchLogsProvider(c, endpoint),
+			awspkg.NewEventBridgeProvider(c, endpoint),
+			awspkg.NewEC2Provider(c, endpoint),
+			awspkg.NewEC2VPCProvider(c, endpoint),
+			awspkg.NewEC2SGProvider(c, endpoint),
+			awspkg.NewEC2VolumesProvider(c, endpoint),
+			awspkg.NewEC2ImagesProvider(c, endpoint),
+			awspkg.NewELBProvider(c, endpoint),
+			awspkg.NewASGProvider(c, endpoint),
+			awspkg.NewRDSProvider(c, endpoint),
+		}
 	}
+
+	providers := buildProviders(cfg, endpointURL)
 
 	if *services != "" {
 		allowed := map[string]bool{}
@@ -108,7 +113,13 @@ func main() {
 		providers = filtered
 	}
 
-	app := ui.NewApp(providers, theme)
+	rebuildFn := func(region string) []awspkg.Provider {
+		c := cfg
+		c.Region = region
+		return buildProviders(c, endpointURL)
+	}
+
+	app := ui.NewApp(providers, theme, cfg.Region, rebuildFn)
 	if err := app.Run(); err != nil {
 		log.Fatalf("run: %v", err)
 	}

@@ -16,6 +16,7 @@ type stubKinesis struct {
 	summary   *ktypes.StreamDescriptionSummary
 	shards    []ktypes.Shard
 	consumers []ktypes.Consumer
+	records   []ktypes.Record
 }
 
 func (s *stubKinesis) ListStreams(_ context.Context, _ *kinesis.ListStreamsInput, _ ...func(*kinesis.Options)) (*kinesis.ListStreamsOutput, error) {
@@ -32,6 +33,15 @@ func (s *stubKinesis) ListShards(_ context.Context, _ *kinesis.ListShardsInput, 
 
 func (s *stubKinesis) ListStreamConsumers(_ context.Context, _ *kinesis.ListStreamConsumersInput, _ ...func(*kinesis.Options)) (*kinesis.ListStreamConsumersOutput, error) {
 	return &kinesis.ListStreamConsumersOutput{Consumers: s.consumers}, nil
+}
+
+func (s *stubKinesis) GetShardIterator(_ context.Context, _ *kinesis.GetShardIteratorInput, _ ...func(*kinesis.Options)) (*kinesis.GetShardIteratorOutput, error) {
+	iter := "stub-iterator"
+	return &kinesis.GetShardIteratorOutput{ShardIterator: &iter}, nil
+}
+
+func (s *stubKinesis) GetRecords(_ context.Context, _ *kinesis.GetRecordsInput, _ ...func(*kinesis.Options)) (*kinesis.GetRecordsOutput, error) {
+	return &kinesis.GetRecordsOutput{Records: s.records}, nil
 }
 
 func TestKinesisProvider_ListItems(t *testing.T) {
@@ -97,6 +107,7 @@ func TestKinesisProvider_Tabs(t *testing.T) {
 		{0, "Overview", "ACTIVE"},
 		{1, "Shards", "shardId-000000000000"},
 		{2, "Consumers", "analytics-svc"},
+		{3, "Records", "Select a shard"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {
@@ -111,5 +122,65 @@ func TestKinesisProvider_Tabs(t *testing.T) {
 				t.Errorf("tab %q missing %q\ngot:\n%s", tc.label, tc.want, content)
 			}
 		})
+	}
+}
+
+func TestKinesisProvider_GetLastShards(t *testing.T) {
+	stub := &stubKinesis{
+		shards: []ktypes.Shard{
+			{
+				ShardId: aws.String("shardId-000000000000"),
+				HashKeyRange: &ktypes.HashKeyRange{
+					StartingHashKey: aws.String("0"),
+					EndingHashKey:   aws.String("99"),
+				},
+			},
+		},
+	}
+	p := awspkg.NewKinesisProviderWithClient(stub)
+	item := awspkg.Item{ID: "events"}
+
+	// Initially empty.
+	if got := p.GetLastShards(); len(got) != 0 {
+		t.Errorf("expected 0 shards before fetch, got %d", len(got))
+	}
+
+	// Fetch the Shards tab to populate cache.
+	tabs := p.Tabs()
+	for _, tab := range tabs {
+		if tab.Label == "Shards" {
+			if _, err := tab.Fetch(context.Background(), item); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		}
+	}
+
+	shards := p.GetLastShards()
+	if len(shards) != 1 {
+		t.Fatalf("got %d shards, want 1", len(shards))
+	}
+	if shards[0].ShardID != "shardId-000000000000" {
+		t.Errorf("ShardID = %q, want shardId-000000000000", shards[0].ShardID)
+	}
+
+	// SetSelectedShard + Records tab should include the selected shard ID in output.
+	p.SetSelectedShard("shardId-000000000000")
+	stub.records = []ktypes.Record{
+		{
+			SequenceNumber: aws.String("seq-1"),
+			PartitionKey:   aws.String("pk-1"),
+			Data:           []byte("hello world"),
+		},
+	}
+	for _, tab := range p.Tabs() {
+		if tab.Label == "Records" {
+			content, err := tab.Fetch(context.Background(), item)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(content, "hello world") {
+				t.Errorf("Records tab missing record data\ngot:\n%s", content)
+			}
+		}
 	}
 }

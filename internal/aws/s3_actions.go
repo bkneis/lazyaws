@@ -1,9 +1,11 @@
 package aws
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -140,7 +142,7 @@ func (p *S3Provider) Actions(item Item) []ActionDef {
 			},
 		)
 
-		// Delete object — only shown when an object is selected.
+		// Delete/edit object — only shown when an object is selected.
 		if key := item.Meta["selectedObjectKey"]; key != "" {
 			actions = append(actions, ActionDef{
 				Label: "Delete object",
@@ -163,6 +165,85 @@ func (p *S3Provider) Actions(item Item) []ActionDef {
 					return nil
 				},
 			})
+
+			if IsTextFile(key) {
+				actions = append(actions, ActionDef{
+					Label: "Edit file",
+					Key:   'e',
+					Func: func(ctx context.Context, item Item, ac ActionContext) error {
+						objKey := item.Meta["selectedObjectKey"]
+						bucket := item.ID
+
+						// Fetch current content.
+						getOut, err := p.client.GetObject(context.Background(), &s3.GetObjectInput{
+							Bucket: awssdk.String(bucket),
+							Key:    awssdk.String(objKey),
+						})
+						if err != nil {
+							return fmt.Errorf("get object: %w", err)
+						}
+						original, err := func() ([]byte, error) {
+							defer getOut.Body.Close()
+							var buf bytes.Buffer
+							_, err := buf.ReadFrom(getOut.Body)
+							return buf.Bytes(), err
+						}()
+						if err != nil {
+							return fmt.Errorf("read object: %w", err)
+						}
+
+						// Write to a temp file with matching extension.
+						tmp, err := os.CreateTemp("", "lazyaws-s3-*"+filepath.Ext(objKey))
+						if err != nil {
+							return fmt.Errorf("create temp file: %w", err)
+						}
+						tmpPath := tmp.Name()
+						defer os.Remove(tmpPath)
+						if _, err := tmp.Write(original); err != nil {
+							tmp.Close()
+							return fmt.Errorf("write temp file: %w", err)
+						}
+						tmp.Close()
+
+						// Open in $EDITOR (suspend TUI for terminal control).
+						editor := os.Getenv("EDITOR")
+						if editor == "" {
+							editor = "vi"
+						}
+						ac.SuspendAndRun(func() {
+							cmd := exec.Command(editor, tmpPath)
+							cmd.Stdin = os.Stdin
+							cmd.Stdout = os.Stdout
+							cmd.Stderr = os.Stderr
+							cmd.Run() //nolint:errcheck // editor exit code is not actionable
+						})
+
+						// Compare and upload if changed.
+						edited, err := os.ReadFile(tmpPath)
+						if err != nil {
+							return fmt.Errorf("read edited file: %w", err)
+						}
+						if bytes.Equal(edited, original) {
+							return nil // no change
+						}
+						ac.Confirm(fmt.Sprintf("Upload changes to s3://%s/%s?", bucket, objKey), func() {
+							go func() {
+								_, err := wc.PutObject(context.Background(), &s3.PutObjectInput{
+									Bucket: awssdk.String(bucket),
+									Key:    awssdk.String(objKey),
+									Body:   bytes.NewReader(edited),
+								})
+								if err != nil {
+									ac.ShowError(err)
+									return
+								}
+								ac.Refresh()
+							}()
+						})
+						return nil
+					},
+				})
+			}
 		}
 	}
 

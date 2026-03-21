@@ -126,6 +126,11 @@ func (ac *appActionContext) Refresh() {
 	})
 }
 
+// SuspendAndRun suspends the TUI, runs fn synchronously, then resumes.
+func (ac *appActionContext) SuspendAndRun(fn func()) {
+	ac.app.tapp.Suspend(fn)
+}
+
 // OpenMultiGroupPicker opens the multi-select log group picker modal.
 func (ac *appActionContext) OpenMultiGroupPicker(onConfirm func([]string)) {
 	groups := make([]string, len(ac.app.loadedItems))
@@ -195,11 +200,10 @@ func (a *App) enrichItemMeta(item awspkg.Item) awspkg.Item {
 		m[k] = v
 	}
 	item.Meta = m
-	// S3: enrich with selected object key when on the Objects tab.
+	// S3: enrich with selected object key whenever an object is selected,
+	// regardless of the active tab (user may browse Content then open actions).
 	if _, ok := a.providers[a.activeProvider].(*awspkg.S3Provider); ok {
-		tabs := a.providers[a.activeProvider].Tabs()
-		if a.activeTab < len(tabs) && tabs[a.activeTab].Label == "Objects" &&
-			len(a.cachedObjects) > 0 && a.selectedObjectRow < len(a.cachedObjects) {
+		if len(a.cachedObjects) > 0 && a.selectedObjectRow < len(a.cachedObjects) {
 			item.Meta["selectedObjectKey"] = a.cachedObjects[a.selectedObjectRow].Key
 		}
 	}

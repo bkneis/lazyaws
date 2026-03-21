@@ -2,12 +2,16 @@ package aws
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
+	kinesistypes "github.com/aws/aws-sdk-go-v2/service/kinesis/types"
 )
 
 // KinesisAPI is the subset of the Kinesis client methods used by KinesisProvider.
@@ -16,11 +20,23 @@ type KinesisAPI interface {
 	DescribeStreamSummary(ctx context.Context, in *kinesis.DescribeStreamSummaryInput, opts ...func(*kinesis.Options)) (*kinesis.DescribeStreamSummaryOutput, error)
 	ListShards(ctx context.Context, in *kinesis.ListShardsInput, opts ...func(*kinesis.Options)) (*kinesis.ListShardsOutput, error)
 	ListStreamConsumers(ctx context.Context, in *kinesis.ListStreamConsumersInput, opts ...func(*kinesis.Options)) (*kinesis.ListStreamConsumersOutput, error)
+	GetShardIterator(ctx context.Context, in *kinesis.GetShardIteratorInput, opts ...func(*kinesis.Options)) (*kinesis.GetShardIteratorOutput, error)
+	GetRecords(ctx context.Context, in *kinesis.GetRecordsInput, opts ...func(*kinesis.Options)) (*kinesis.GetRecordsOutput, error)
+}
+
+// KinesisShardItem holds display data for a single Kinesis shard row.
+type KinesisShardItem struct {
+	ShardID   string
+	StartHash string
+	EndHash   string
 }
 
 // KinesisProvider implements Provider for Amazon Kinesis Data Streams.
 type KinesisProvider struct {
-	client KinesisAPI
+	client          KinesisAPI
+	mu              sync.RWMutex
+	lastShards      []KinesisShardItem
+	selectedShardID string
 }
 
 func NewKinesisProvider(cfg awssdk.Config, endpointURL string) *KinesisProvider {
@@ -70,6 +86,7 @@ func (p *KinesisProvider) Tabs() []TabDef {
 		{Label: "Overview", Fetch: p.tabOverview},
 		{Label: "Shards", Fetch: p.tabShards},
 		{Label: "Consumers", Fetch: p.tabConsumers},
+		{Label: "Records", Fetch: p.tabRecords},
 	}
 }
 
@@ -129,6 +146,7 @@ func (p *KinesisProvider) tabShards(ctx context.Context, item Item) (string, err
 	if len(out.Shards) == 0 {
 		return "  (no shards found)\n", nil
 	}
+	shards := make([]KinesisShardItem, len(out.Shards))
 	rows := make([][]string, len(out.Shards))
 	for i, s := range out.Shards {
 		startHash := ""
@@ -137,9 +155,91 @@ func (p *KinesisProvider) tabShards(ctx context.Context, item Item) (string, err
 			startHash = awssdk.ToString(s.HashKeyRange.StartingHashKey)
 			endHash = awssdk.ToString(s.HashKeyRange.EndingHashKey)
 		}
-		rows[i] = []string{awssdk.ToString(s.ShardId), startHash, endHash}
+		shardID := awssdk.ToString(s.ShardId)
+		shards[i] = KinesisShardItem{ShardID: shardID, StartHash: startHash, EndHash: endHash}
+		rows[i] = []string{shardID, startHash, endHash}
 	}
+	p.mu.Lock()
+	p.lastShards = shards
+	p.mu.Unlock()
 	return Table([]string{"Shard ID", "Start Hash", "End Hash"}, rows), nil
+}
+
+// GetLastShards returns the shards cached by the most recent tabShards call.
+func (p *KinesisProvider) GetLastShards() []KinesisShardItem {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]KinesisShardItem, len(p.lastShards))
+	copy(out, p.lastShards)
+	return out
+}
+
+// SetSelectedShard records the currently selected shard ID for the Records tab.
+func (p *KinesisProvider) SetSelectedShard(id string) {
+	p.mu.Lock()
+	p.selectedShardID = id
+	p.mu.Unlock()
+}
+
+func (p *KinesisProvider) tabRecords(ctx context.Context, item Item) (string, error) {
+	p.mu.RLock()
+	shardID := p.selectedShardID
+	p.mu.RUnlock()
+	if shardID == "" {
+		return "  Select a shard in the Shards tab (j/k) to view records.\n", nil
+	}
+	itOut, err := p.client.GetShardIterator(ctx, &kinesis.GetShardIteratorInput{
+		StreamName:        awssdk.String(item.ID),
+		ShardId:           awssdk.String(shardID),
+		ShardIteratorType: kinesistypes.ShardIteratorTypeLatest,
+	})
+	if err != nil {
+		return "", fmt.Errorf("get shard iterator: %w", err)
+	}
+	recOut, err := p.client.GetRecords(ctx, &kinesis.GetRecordsInput{
+		ShardIterator: itOut.ShardIterator,
+		Limit:         awssdk.Int32(50),
+	})
+	if err != nil {
+		return "", fmt.Errorf("get records: %w", err)
+	}
+	if len(recOut.Records) == 0 {
+		return fmt.Sprintf("  (no records in shard %s — iterator is at LATEST)\n", shardID), nil
+	}
+	rows := make([][]string, len(recOut.Records))
+	for i, r := range recOut.Records {
+		ts := ""
+		if r.ApproximateArrivalTimestamp != nil {
+			ts = r.ApproximateArrivalTimestamp.Format(time.DateTime)
+		}
+		rows[i] = []string{
+			awssdk.ToString(r.SequenceNumber),
+			awssdk.ToString(r.PartitionKey),
+			formatRecordData(r.Data),
+			ts,
+		}
+	}
+	return Table([]string{"Seq #", "Partition Key", "Data", "Timestamp"}, rows), nil
+}
+
+// formatRecordData returns a human-readable representation of Kinesis record data.
+// Valid UTF-8 is displayed directly (truncated to 80 chars); binary data shows a hex prefix.
+func formatRecordData(data []byte) string {
+	if len(data) == 0 {
+		return "(empty)"
+	}
+	if utf8.Valid(data) {
+		s := strings.ReplaceAll(string(data), "\n", " ")
+		if len(s) > 80 {
+			return s[:80] + "…"
+		}
+		return s
+	}
+	n := 8
+	if len(data) < n {
+		n = len(data)
+	}
+	return "0x" + hex.EncodeToString(data[:n]) + "…"
 }
 
 func (p *KinesisProvider) tabConsumers(ctx context.Context, item Item) (string, error) {

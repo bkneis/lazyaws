@@ -54,14 +54,18 @@ type App struct {
 	tabBarOffsets     []int       // display-column start per tab (for mouse click)
 	tabLinks          [][]linkRef // per-tab extracted links, parallel to tabCache
 	tabRawCache       []string    // per-tab raw content before link marker stripping
-	navStack           []navState
-	rootPages          *tview.Pages
-	selectedObjectRow  int
-	cachedObjects      []awspkg.S3ObjectItem
-	selectedDynamoRow  int
-	cachedDynamoRows   []awspkg.DynamoDBItemRow
-	dynamoHeaders      []string
-	tmpFiles           []string // temp files to clean up on exit
+	navStack            []navState
+	rootPages           *tview.Pages
+	selectedObjectRow   int
+	cachedObjects       []awspkg.S3ObjectItem
+	selectedDynamoRow   int
+	cachedDynamoRows    []awspkg.DynamoDBItemRow
+	dynamoHeaders       []string
+	tmpFiles            []string // temp files to clean up on exit
+	cachedKinesisShards []awspkg.KinesisShardItem
+	selectedShardRow    int
+	currentRegion       string
+	rebuildFn           func(string) []awspkg.Provider
 	// CW Logs live tail state
 	cachedCWLogStreams  []awspkg.CWLogStreamRow
 	selectedCWStreamRow int
@@ -77,15 +81,19 @@ type cwTailEvent struct {
 	msg    string
 }
 
-// NewApp constructs the App with the given resource providers and color theme.
-func NewApp(providers []awspkg.Provider, theme Theme) *App {
+// NewApp constructs the App with the given resource providers, color theme, current AWS region,
+// and a factory function for rebuilding providers when the region changes.
+func NewApp(providers []awspkg.Provider, theme Theme, region string, rebuildFn func(string) []awspkg.Provider) *App {
 	a := &App{
-		tapp:      tview.NewApplication(),
-		panels:    newPanels(theme),
-		theme:     theme,
-		providers: providers,
+		tapp:          tview.NewApplication(),
+		panels:        newPanels(theme),
+		theme:         theme,
+		providers:     providers,
+		currentRegion: region,
+		rebuildFn:     rebuildFn,
 	}
 	a.build()
+	a.updateHints()
 	return a
 }
 
@@ -190,6 +198,19 @@ func (a *App) build() {
 				}
 			}
 
+			if _, ok := a.providers[a.activeProvider].(*awspkg.KinesisProvider); ok {
+				if a.activeTab < len(tabs) && tabs[a.activeTab].Label == "Shards" && len(a.cachedKinesisShards) > 0 {
+					shardIdx := contentRow - 2 // skip header + separator rows
+					if shardIdx >= 0 && shardIdx < len(a.cachedKinesisShards) {
+						a.selectedShardRow = shardIdx
+						a.moveShardRow(0)
+						a.panels.focused = 2
+						a.tapp.SetFocus(a.panels.detail)
+					}
+					return tview.MouseConsumed, nil
+				}
+			}
+
 			// Generic: follow a cross-resource link on the clicked row.
 			if a.activeTab < len(a.tabRawCache) && a.tabRawCache[a.activeTab] != "" {
 				lines := strings.Split(a.tabRawCache[a.activeTab], "\n")
@@ -246,6 +267,8 @@ func (a *App) loadItems(i int, query string) {
 	a.selectedDynamoRow = 0
 	a.cachedDynamoRows = nil
 	a.dynamoHeaders = nil
+	a.cachedKinesisShards = nil
+	a.selectedShardRow = 0
 	a.panels.items.Clear()
 	a.panels.detail.SetText("Loading...")
 
@@ -325,6 +348,8 @@ func (a *App) selectItem(providerIdx int, item awspkg.Item) {
 	a.selectedDynamoRow = 0
 	a.cachedDynamoRows = nil
 	a.dynamoHeaders = nil
+	a.cachedKinesisShards = nil
+	a.selectedShardRow = 0
 	tabs := a.providers[providerIdx].Tabs()
 	a.tabLoaded = make([]bool, len(tabs))
 	a.tabCache = make([]string, len(tabs))
@@ -381,6 +406,16 @@ func (a *App) loadTab(providerIdx, tabIdx int, item awspkg.Item) {
 					a.selectedCWStreamRow = 0
 				}
 			}
+			// Cache Kinesis shards for row selection when the Shards tab finishes loading.
+			if kp, ok := a.providers[providerIdx].(*awspkg.KinesisProvider); ok {
+				if tabIdx < len(tabs) && tabs[tabIdx].Label == "Shards" {
+					a.cachedKinesisShards = kp.GetLastShards()
+					a.selectedShardRow = 0
+					if len(a.cachedKinesisShards) > 0 {
+						kp.SetSelectedShard(a.cachedKinesisShards[0].ShardID)
+					}
+				}
+			}
 			if a.activeTab == tabIdx {
 				a.renderDetail()
 				if a.panels.detail.HasFocus() {
@@ -414,6 +449,8 @@ func (a *App) renderDetail() {
 			content = a.renderDynamoItemsWithHighlight()
 		case len(a.cachedCWLogStreams) > 0 && tabs[a.activeTab].Label == "Streams":
 			content = a.renderCWStreamsWithHighlight()
+		case len(a.cachedKinesisShards) > 0 && tabs[a.activeTab].Label == "Shards":
+			content = a.renderShardsWithHighlight()
 		default:
 			content = a.tabCache[a.activeTab]
 		}
@@ -1045,6 +1082,168 @@ func (a *App) renderCWStreamsWithHighlight() string {
 		sb.WriteString("\n")
 	}
 	return sb.String()
+}
+
+// ── Kinesis shards row selection ─────────────────────────────────────────────
+
+// isKinesisShardsTabFocused returns true when the detail pane has focus,
+// the active provider is KinesisProvider, the active tab is Shards, and shards are cached.
+func (a *App) isKinesisShardsTabFocused() bool {
+	if a.tapp.GetFocus() != a.panels.detail {
+		return false
+	}
+	if _, ok := a.providers[a.activeProvider].(*awspkg.KinesisProvider); !ok {
+		return false
+	}
+	tabs := a.providers[a.activeProvider].Tabs()
+	if a.activeTab >= len(tabs) || tabs[a.activeTab].Label != "Shards" {
+		return false
+	}
+	return len(a.cachedKinesisShards) > 0
+}
+
+// renderShardsWithHighlight rebuilds the Shards tab table with the selected row highlighted.
+func (a *App) renderShardsWithHighlight() string {
+	if len(a.cachedKinesisShards) == 0 {
+		return a.tabCache[a.activeTab]
+	}
+	headers := []string{"Shard ID", "Start Hash", "End Hash"}
+	rows := make([][]string, len(a.cachedKinesisShards))
+	for i, s := range a.cachedKinesisShards {
+		rows[i] = []string{s.ShardID, s.StartHash, s.EndHash}
+	}
+	widths := make([]int, len(headers))
+	for i, h := range headers {
+		widths[i] = len(h)
+	}
+	for _, row := range rows {
+		for i, cell := range row {
+			if i < len(widths) && len(cell) > widths[i] {
+				widths[i] = len(cell)
+			}
+		}
+	}
+	padded := make([]string, len(headers))
+	for i, h := range headers {
+		padded[i] = fmt.Sprintf("%-*s", widths[i]+2, h)
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "  %s%s[-]\n  ", a.theme.HeaderTag, strings.Join(padded, ""))
+	for _, w := range widths {
+		sb.WriteString(strings.Repeat("─", w) + "  ")
+	}
+	sb.WriteString("\n")
+	for i, row := range rows {
+		if i == a.selectedShardRow {
+			sb.WriteString("  " + a.theme.HighlightTag)
+		} else {
+			sb.WriteString("  ")
+		}
+		for j, cell := range row {
+			if j < len(widths) {
+				fmt.Fprintf(&sb, "%-*s", widths[j]+2, cell)
+			}
+		}
+		if i == a.selectedShardRow {
+			sb.WriteString("[-]")
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// moveShardRow adjusts selectedShardRow by delta (clamped) and re-renders.
+func (a *App) moveShardRow(delta int) {
+	n := len(a.cachedKinesisShards)
+	if n == 0 {
+		return
+	}
+	a.selectedShardRow += delta
+	if a.selectedShardRow < 0 {
+		a.selectedShardRow = 0
+	}
+	if a.selectedShardRow >= n {
+		a.selectedShardRow = n - 1
+	}
+	if kp, ok := a.providers[a.activeProvider].(*awspkg.KinesisProvider); ok {
+		kp.SetSelectedShard(a.cachedKinesisShards[a.selectedShardRow].ShardID)
+		// Invalidate Records tab so it re-fetches with the new shard selection.
+		for i, t := range a.providers[a.activeProvider].Tabs() {
+			if t.Label == "Records" && i < len(a.tabLoaded) {
+				a.tabLoaded[i] = false
+			}
+		}
+	}
+	a.renderDetail()
+}
+
+// ── Region switcher ───────────────────────────────────────────────────────────
+
+var awsRegions = []string{
+	"us-east-1", "us-east-2", "us-west-1", "us-west-2",
+	"eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-north-1",
+	"ap-southeast-1", "ap-southeast-2", "ap-northeast-1", "ap-northeast-2", "ap-south-1",
+	"sa-east-1", "ca-central-1", "af-south-1", "me-south-1",
+}
+
+// updateHints rebuilds the hints string (with current region) and updates the status bar.
+func (a *App) updateHints() {
+	ht := a.theme.HeaderTag
+	regionLabel := a.currentRegion
+	if regionLabel == "" {
+		regionLabel = "?"
+	}
+	hints := ht + "Tab[-]/" + ht + "S-Tab[-]: panel   " +
+		ht + "j/k[-]: navigate   " +
+		ht + "[[]·][-]: tab   " +
+		ht + "/[-]: search   " +
+		ht + "r[-]: refresh   " +
+		ht + "g[-]: gonzo   " +
+		ht + "x[-]: actions   " +
+		ht + "R[-]: region [" + regionLabel + "]   " +
+		ht + "q[-]: quit"
+	a.panels.hintsText = " " + hints
+	a.panels.status.SetText(" " + hints)
+}
+
+// switchRegion rebuilds providers for the given region and reloads items.
+func (a *App) switchRegion(region string) {
+	a.currentRegion = region
+	a.providers = a.rebuildFn(region)
+	a.panels.resources.Clear()
+	for i, p := range a.providers {
+		i, p := i, p
+		a.panels.resources.AddItem(p.Name(), "", 0, func() {
+			a.activeProvider = i
+			a.panels.searchInput.SetText("")
+			a.panels.statusPages.SwitchToPage("hints")
+			a.resetHints()
+			a.loadItems(i, "")
+		})
+	}
+	a.activeProvider = 0
+	a.loadItems(0, "")
+	a.updateHints()
+}
+
+// openRegionPicker shows a modal list of common AWS regions to switch to.
+func (a *App) openRegionPicker() {
+	list := tview.NewList().ShowSecondaryText(false)
+	list.SetBorder(true).SetTitle(" Switch Region ")
+	list.SetSelectedTextColor(a.theme.SelectionText).SetSelectedBackgroundColor(a.theme.FocusColor)
+	for _, region := range awsRegions {
+		region := region
+		label := region
+		if region == a.currentRegion {
+			label = a.theme.HeaderTag + region + "[-] (current)"
+		}
+		list.AddItem(label, "", 0, func() {
+			a.popModal()
+			a.switchRegion(region)
+		})
+	}
+	height := len(awsRegions) + 2
+	a.pushModal(list, 32, height)
 }
 
 // isCWLogsActive returns true when the active provider is CloudWatchLogsProvider

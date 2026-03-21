@@ -91,7 +91,8 @@ AWS credentials are loaded from the standard chain (`AWS_*` environment variable
 - Fast grep like search across your infrastucture using `/`
 - Cloudwatch Logs Viewer
 - S3 Explorer with ability to view text / json files and download items
-- DynamoDB viewer for easily inspecting JSON objects
+- DynamoDB browser for easily inspecting JSON objects
+- Actions menu (x) for interactive commands like uploading a file to s3, sending a message to SQS or SNS
 - Cross resource linking, click underscored hyperlinks in resource lists to jump to that resouce
 - Point it at any AWS control plane such as localstack using --entrypoint-url
 - Completely clickable TUI, no need to learn keyboard shortcuts if you don't want to
