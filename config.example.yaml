@@ -1,0 +1,83 @@
+# lazyaws configuration file
+#
+# Copy this file to the appropriate location for your OS:
+#
+#   Linux / macOS:  ~/.config/lazyaws/config.yaml
+#                   (or $XDG_CONFIG_HOME/lazyaws/config.yaml if XDG_CONFIG_HOME is set)
+#   Windows:        %USERPROFILE%\.config\lazyaws\config.yaml
+#
+# All fields are optional — omit any key to keep the auto-detected default.
+# lazyaws detects your terminal background and picks a matching color scheme
+# automatically; use this file to override individual colors.
+#
+# Color values accept any named tcell color (e.g. "aqua", "green", "blue",
+# "white", "yellow", "red", "purple") or a hex string (e.g. "#ff9900").
+#
+# tview tag values control how text is rendered in the detail pane.
+# Format: "[color]" or "[color::style]" where style is b=bold, u=underline, i=italic.
+# See: https://pkg.go.dev/github.com/rivo/tview#hdr-Colors
+
+theme:
+  # Background color of the focused panel border and selected list item
+  focus_color: "aqua"
+
+  # Text color of the selected list item (should contrast with focus_color)
+  selection_text: "black"
+
+  # tview tag applied to the currently highlighted row in tables
+  highlight_tag: "[aqua]"
+
+  # tview tag for KV key labels and table column headers
+  header_tag: "[cyan]"
+
+  # tview tag for the active (selected) detail tab label
+  active_tab_tag: "[aqua]"
+
+  # tview tag for inactive detail tab labels
+  inactive_tab_tag: "[gray]"
+
+  # tview tag for cross-resource hyperlinks (underline recommended)
+  link_tag: "[aqua::u]"
+
+
+# --- Example themes ---
+
+# Dark terminal (default — aqua/cyan):
+# theme:
+#   focus_color: "aqua"
+#   selection_text: "black"
+#   highlight_tag: "[aqua]"
+#   header_tag: "[cyan]"
+#   active_tab_tag: "[aqua]"
+#   inactive_tab_tag: "[gray]"
+#   link_tag: "[aqua::u]"
+
+# Warp terminal (green):
+# theme:
+#   focus_color: "green"
+#   selection_text: "black"
+#   highlight_tag: "[green]"
+#   header_tag: "[green]"
+#   active_tab_tag: "[green]"
+#   inactive_tab_tag: "[gray]"
+#   link_tag: "[green::u]"
+
+# Light terminal (blue):
+# theme:
+#   focus_color: "blue"
+#   selection_text: "white"
+#   highlight_tag: "[blue]"
+#   header_tag: "[blue]"
+#   active_tab_tag: "[blue]"
+#   inactive_tab_tag: "[gray]"
+#   link_tag: "[blue::u]"
+
+# AWS orange:
+# theme:
+#   focus_color: "#ff9900"
+#   selection_text: "black"
+#   highlight_tag: "[#ff9900]"
+#   header_tag: "[#ff9900]"
+#   active_tab_tag: "[#ff9900]"
+#   inactive_tab_tag: "[gray]"
+#   link_tag: "[#ff9900::u]"

@@ -56,7 +56,6 @@ func newPanels(t Theme) *panels {
 		t.HeaderTag + "[[]·][-]: tab   " +
 		t.HeaderTag + "/[-]: search   " +
 		t.HeaderTag + "r[-]: refresh   " +
-		t.HeaderTag + "g[-]: gonzo   " +
 		t.HeaderTag + "x[-]: actions   " +
 		t.HeaderTag + "R[-]: region   " +
 		t.HeaderTag + "q[-]: quit"

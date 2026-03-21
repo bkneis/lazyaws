@@ -68,11 +68,6 @@ func setupKeys(a *App) {
 		case 'R':
 			a.openRegionPicker()
 			return nil
-		case 'g':
-			if a.isCWLogsActive() {
-				a.openInGonzo()
-				return nil
-			}
 		case 'j':
 			if a.isCWStreamsTabFocused() {
 				a.moveCWStreamRow(1)

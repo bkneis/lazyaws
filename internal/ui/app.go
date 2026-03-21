@@ -3,9 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -1198,7 +1196,6 @@ func (a *App) updateHints() {
 		ht + "[[]·][-]: tab   " +
 		ht + "/[-]: search   " +
 		ht + "r[-]: refresh   " +
-		ht + "g[-]: gonzo   " +
 		ht + "x[-]: actions   " +
 		ht + "R[-]: region [" + regionLabel + "]   " +
 		ht + "q[-]: quit"
@@ -1244,58 +1241,6 @@ func (a *App) openRegionPicker() {
 	}
 	height := len(awsRegions) + 2
 	a.pushModal(list, 32, height)
-}
-
-// isCWLogsActive returns true when the active provider is CloudWatchLogsProvider
-// and a log group is selected.
-func (a *App) isCWLogsActive() bool {
-	if _, ok := a.providers[a.activeProvider].(*awspkg.CloudWatchLogsProvider); !ok {
-		return false
-	}
-	return a.currentItem.ID != ""
-}
-
-// openInGonzo suspends the TUI, starts gonzo, and pipes the live tail of the
-// current CloudWatch log group into gonzo's stdin. Resumes lazyaws when gonzo exits.
-func (a *App) openInGonzo() {
-	cwlp, ok := a.providers[a.activeProvider].(*awspkg.CloudWatchLogsProvider)
-	if !ok {
-		return
-	}
-	if _, err := exec.LookPath("gonzo"); err != nil {
-		a.showStatusMessage("[red]gonzo not found in PATH[-]")
-		return
-	}
-
-	group := a.currentItem.ID
-	cmd := exec.Command("gonzo")
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		a.showStatusMessage(fmt.Sprintf("[red]gonzo pipe: %v[-]", err))
-		return
-	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	a.tapp.Suspend(func() {
-		if err := cmd.Start(); err != nil {
-			cancel()
-			stdin.Close()
-			return
-		}
-		go func() {
-			cwlp.StartTail(ctx, group, "", func(_ int64, _, _, msg string) {
-				fmt.Fprintln(stdin, msg) //nolint:errcheck
-			})
-			stdin.Close()
-		}()
-		if err := cmd.Wait(); err != nil {
-			log.Printf("gonzo exited: %v", err)
-		}
-		cancel()
-	})
 }
 
 // renderCWLogTail generates the content for the CW Logs Tail tab.

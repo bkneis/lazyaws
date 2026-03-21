@@ -4,8 +4,8 @@
 
 <p align="center">
   A terminal UI for managing AWS resources — inspired by
-  <a href="https://github.com/jesseduffield/lazydocker">lazydocker</a>, 
-  <a href="https://github.com/derailed/k9s">k9s</a> and 
+  <a href="https://github.com/jesseduffield/lazydocker">lazydocker</a>,
+  <a href="https://github.com/derailed/k9s">k9s</a> and
   <a href="https://github.com/jesseduffield/lazygit">lazygit</a>.
 </p>
 
@@ -92,16 +92,18 @@ AWS credentials are loaded from the standard chain (`AWS_*` environment variable
 ## Cool Features
 
 - Fast grep like search across your infrastucture using `/`
-- Cloudwatch Logs Viewer
+- Cloudwatch Logs Viewer with live tail and multi-group streaming
 - S3 Explorer with ability to view text / json files and download items
 - DynamoDB browser for easily inspecting JSON objects
-- Actions menu (x) for interactive commands like uploading a file to s3, sending a message to SQS or SNS
-- Cross resource linking, click underscored hyperlinks in resource lists to jump to that resouce
-- Point it at any AWS control plane such as localstack using --entrypoint-url
-- Completely clickable TUI, no need to learn keyboard shortcuts if you don't want to
-- Connect to EC2, ECS and RDS instances right from your list (requires either AWS SSM or host needs to be addressable form the network)
-- Single binary ~28mb that works across window, linux and mac 32/64bit
-- Doesn't require aws cli to be installed or use any porcelin command processing, entirely built using go aws sdk and uses your local authentication configured
+- Actions menu (`x`) for interactive commands: upload files to S3, send SQS/SNS messages, invoke Lambda functions, create snapshots, and more
+- Cross resource linking — click underlined hyperlinks in resource details to jump to that resource
+- **Connect to EC2 instances** via SSH or AWS SSM Session Manager directly from the list
+- **Launch a DB shell** for RDS instances — infers `psql` or `mysql` connection string from instance details
+- **Exec into ECS containers** via `aws ecs execute-command`
+- Point it at any AWS control plane such as LocalStack using `--entrypoint-url`
+- Completely clickable TUI — mouse support, no need to learn keyboard shortcuts
+- Single binary ~28mb that works across Windows, Linux and Mac 32/64bit
+- Doesn't require the AWS CLI to be installed — built entirely on the Go AWS SDK using your local credentials
 
 ---
 
@@ -116,40 +118,70 @@ If you find this useful, consider giving it a ⭐ — it helps others discover t
 | `Tab` / `Shift+Tab` | Cycle focus between panels |
 | `j` / `k` or `↓` / `↑` | Navigate lists |
 | `[` / `]` | Previous / next detail tab |
+| `/` | Search / filter current resource list |
 | `r` | Refresh current resource list |
+| `x` | Open actions menu for selected resource |
+| `R` | Switch AWS region |
 | `q` | Quit |
 
 ## Supported Services
 
-| Service | Detail tabs |
-|---------|-------------|
-| S3 | Overview, Objects, Policy |
-| Lambda | Overview, Env vars, Triggers |
-| SNS | Overview, Subscriptions |
-| SQS | Overview, Config, DLQ |
-| CloudFormation | Overview, Resources, Outputs, Parameters |
-| IAM Roles | Overview, Policies, Trust policy |
-| IAM Policies | Overview, Document |
-| Secrets Manager | Overview, Value, Versions |
-| API Gateway (v1 + v2) | Overview, Routes/Resources, Stages |
-| Route 53 | Overview, Records |
-| ACM | Overview, Domains, Validation |
-| DynamoDB | Overview, Items, Indexes |
-| Kinesis | Overview, Shards |
-| KMS | Overview, Aliases |
-| Step Functions | Overview, Executions |
-| CloudWatch | Overview, Metrics |
-| CloudWatch Logs | Overview, Log streams |
-| EventBridge | Overview, Rules |
-| EC2 Instances | Overview, Tags |
-| EC2 VPCs | Overview, Subnets |
-| EC2 Security Groups | Overview, Rules |
-| EC2 Volumes | Overview, Attachments |
-| EC2 AMIs | Overview, Block devices |
-| Elastic Load Balancers | Overview, Listeners, Target groups |
-| Auto Scaling Groups | Overview, Instances |
-| SSM | Overview, Value, History |
-| ECS | Overivew | Services | Tasks |
+| Service | Detail tabs | Actions |
+|---------|-------------|---------|
+| S3 | Overview, Objects, Policy, Content | Upload, download, delete objects; create/delete buckets |
+| Lambda | Overview, Env vars, Triggers | Invoke function, delete function |
+| SNS | Overview, Subscriptions | Create/delete topic, subscribe, publish message |
+| SQS | Overview, Config, DLQ, Messages | Create/delete queue, send message, purge |
+| CloudFormation | Overview, Resources, Outputs, Parameters, Events | — |
+| IAM Roles | Overview, Policies, Trust policy | — |
+| IAM Policies | Overview, Document | — |
+| Secrets Manager | Overview, Value, Versions | Create/delete secret, update value |
+| API Gateway (v1 + v2) | Overview, Routes/Resources, Stages | — |
+| Route 53 | Overview, Records | Create/delete zone, create/update/delete records |
+| ACM | Overview, Domains, Validation | — |
+| DynamoDB | Overview, Items, Indexes, Backups | Create/delete table, put item, create backup |
+| Kinesis | Overview, Shards, Consumers, Records | Create/delete stream, put record |
+| KMS | Overview, Policy, Aliases | — |
+| Step Functions | Overview, Definition, Executions | — |
+| CloudWatch Alarms | Overview, History | — |
+| CloudWatch Logs | Overview, Streams, Tail | Create/delete log group, set retention |
+| EventBridge | Overview, Targets | — |
+| EC2 Instances | Overview, Network, Storage, Tags | Start, stop, reboot, terminate; **connect via SSH or SSM** |
+| EC2 VPCs | Overview, Subnets, Route Tables | — |
+| EC2 Security Groups | Overview, Inbound Rules, Outbound Rules | Delete security group |
+| EC2 Volumes | Overview, Snapshots | — |
+| EC2 AMIs | Overview, Block Devices | — |
+| Elastic Load Balancers | Overview, Listeners, Target Groups | — |
+| Auto Scaling Groups | Overview, Instances, Scaling Policies, Activities | — |
+| RDS | Overview, Connectivity, Config, Snapshots | Start, stop, reboot, snapshot, delete; **launch DB shell (psql/mysql)** |
+| ECS | Overview, Services, Tasks | **Exec into container** |
+| SSM Parameter Store | Overview, Value (decrypted), History | — |
+
+## Configuration & Theming
+
+lazyaws auto-detects your terminal color scheme (dark, light, or Warp). To customise the theme, create a config file at:
+
+| Platform | Config file location |
+|----------|---------------------|
+| **Linux / macOS** | `~/.config/lazyaws/config.yaml` |
+| **Linux / macOS** (XDG) | `$XDG_CONFIG_HOME/lazyaws/config.yaml` |
+| **Windows** | `%USERPROFILE%\.config\lazyaws\config.yaml` |
+
+An annotated example config with all available options and preset themes is included in [`config.example.yaml`](config.example.yaml).
+
+```yaml
+# ~/.config/lazyaws/config.yaml
+theme:
+  focus_color: "#ff9900"       # AWS orange borders + selection highlight
+  selection_text: "black"
+  highlight_tag: "[#ff9900]"
+  header_tag: "[#ff9900]"
+  active_tab_tag: "[#ff9900]"
+  inactive_tab_tag: "[gray]"
+  link_tag: "[#ff9900::u]"
+```
+
+Color values accept named tcell colors (`"aqua"`, `"green"`, `"blue"`, etc.) or hex strings (`"#ff9900"`). All fields are optional — omit any key to keep the auto-detected default.
 
 ## Contributing
 
