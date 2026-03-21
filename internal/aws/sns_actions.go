@@ -13,6 +13,7 @@ type SNSActionsAPI interface {
 	CreateTopic(ctx context.Context, in *sns.CreateTopicInput, opts ...func(*sns.Options)) (*sns.CreateTopicOutput, error)
 	DeleteTopic(ctx context.Context, in *sns.DeleteTopicInput, opts ...func(*sns.Options)) (*sns.DeleteTopicOutput, error)
 	Publish(ctx context.Context, in *sns.PublishInput, opts ...func(*sns.Options)) (*sns.PublishOutput, error)
+	Subscribe(ctx context.Context, in *sns.SubscribeInput, opts ...func(*sns.Options)) (*sns.SubscribeOutput, error)
 }
 
 // Actions implements Actionable for SNSProvider.
@@ -46,6 +47,29 @@ func (p *SNSProvider) Actions(item Item) []ActionDef {
 
 	if item.ID != "" {
 		actions = append(actions,
+			ActionDef{
+				Label: "Create subscription",
+				Key:   's',
+				Func: func(ctx context.Context, item Item, ac ActionContext) error {
+					ac.PromptInput("Protocol (sqs/lambda/http/https/email/sms)", "sqs", func(protocol string) {
+						ac.PromptInput("Endpoint (ARN or URL)", "", func(endpoint string) {
+							go func() {
+								_, err := wc.Subscribe(context.Background(), &sns.SubscribeInput{
+									TopicArn: awssdk.String(item.ID),
+									Protocol: awssdk.String(protocol),
+									Endpoint: awssdk.String(endpoint),
+								})
+								if err != nil {
+									ac.ShowError(err)
+									return
+								}
+								ac.Refresh()
+							}()
+						})
+					})
+					return nil
+				},
+			},
 			ActionDef{
 				Label: "Delete topic",
 				Key:   'd',

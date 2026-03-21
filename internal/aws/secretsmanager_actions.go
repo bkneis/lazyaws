@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
@@ -12,6 +13,7 @@ type SMActionsAPI interface {
 	CreateSecret(ctx context.Context, in *secretsmanager.CreateSecretInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.CreateSecretOutput, error)
 	DeleteSecret(ctx context.Context, in *secretsmanager.DeleteSecretInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.DeleteSecretOutput, error)
 	PutSecretValue(ctx context.Context, in *secretsmanager.PutSecretValueInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.PutSecretValueOutput, error)
+	GetSecretValue(ctx context.Context, in *secretsmanager.GetSecretValueInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
 }
 
 // Actions implements Actionable for SMProvider.
@@ -72,19 +74,52 @@ func (p *SMProvider) Actions(item Item) []ActionDef {
 				Label: "Update value",
 				Key:   'u',
 				Func: func(ctx context.Context, item Item, ac ActionContext) error {
-					ac.PromptInput("New secret value", "", func(value string) {
-						go func() {
-							_, err := wc.PutSecretValue(context.Background(), &secretsmanager.PutSecretValueInput{
-								SecretId:     awssdk.String(item.ID),
-								SecretString: awssdk.String(value),
+					go func() {
+						out, err := wc.GetSecretValue(context.Background(), &secretsmanager.GetSecretValueInput{
+							SecretId: awssdk.String(item.ID),
+						})
+						if err != nil {
+							ac.ShowError(err)
+							return
+						}
+						current := awssdk.ToString(out.SecretString)
+						var m map[string]any
+						if json.Unmarshal([]byte(current), &m) == nil {
+							// JSON secret: update a single key
+							ac.PromptInput("Key to update/add", "", func(key string) {
+								ac.PromptInput("New value for "+key, "", func(val string) {
+									go func() {
+										m[key] = val
+										b, _ := json.Marshal(m)
+										_, err := wc.PutSecretValue(context.Background(), &secretsmanager.PutSecretValueInput{
+											SecretId:     awssdk.String(item.ID),
+											SecretString: awssdk.String(string(b)),
+										})
+										if err != nil {
+											ac.ShowError(err)
+											return
+										}
+										ac.Refresh()
+									}()
+								})
 							})
-							if err != nil {
-								ac.ShowError(err)
-								return
-							}
-							ac.Refresh()
-						}()
-					})
+						} else {
+							// Plain string secret
+							ac.PromptInput("New secret value", "", func(value string) {
+								go func() {
+									_, err := wc.PutSecretValue(context.Background(), &secretsmanager.PutSecretValueInput{
+										SecretId:     awssdk.String(item.ID),
+										SecretString: awssdk.String(value),
+									})
+									if err != nil {
+										ac.ShowError(err)
+										return
+									}
+									ac.Refresh()
+								}()
+							})
+						}
+					}()
 					return nil
 				},
 			},

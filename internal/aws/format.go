@@ -77,6 +77,7 @@ func Table(headers []string, rows [][]string) string {
 				if pad > 0 {
 					sb.WriteString(strings.Repeat(" ", pad))
 				}
+				sb.WriteString("[-::-]")
 			}
 		}
 		sb.WriteString("\n")

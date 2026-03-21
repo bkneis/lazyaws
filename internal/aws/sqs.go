@@ -14,6 +14,7 @@ import (
 type SQSAPI interface {
 	ListQueues(ctx context.Context, in *sqs.ListQueuesInput, opts ...func(*sqs.Options)) (*sqs.ListQueuesOutput, error)
 	GetQueueAttributes(ctx context.Context, in *sqs.GetQueueAttributesInput, opts ...func(*sqs.Options)) (*sqs.GetQueueAttributesOutput, error)
+	ReceiveMessage(ctx context.Context, in *sqs.ReceiveMessageInput, opts ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error)
 }
 
 type SQSProvider struct{ client SQSAPI }
@@ -70,6 +71,7 @@ func (p *SQSProvider) Tabs() []TabDef {
 		{Label: "Overview", Fetch: p.tabOverview},
 		{Label: "Config", Fetch: p.tabConfig},
 		{Label: "DLQ", Fetch: p.tabDLQ},
+		{Label: "Messages", Fetch: p.tabMessages},
 	}
 }
 
@@ -148,6 +150,31 @@ func (p *SQSProvider) tabDLQ(ctx context.Context, item Item) (string, error) {
 		{"DLQ", Link(redrive.DeadLetterTargetArn, "SQS", dlqURL)},
 		{"Max Receives", fmt.Sprintf("%d", redrive.MaxReceiveCount)},
 	}), nil
+}
+
+func (p *SQSProvider) tabMessages(ctx context.Context, item Item) (string, error) {
+	out, err := p.client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            awssdk.String(item.ID),
+		MaxNumberOfMessages: 10,
+		VisibilityTimeout:   0,
+		AttributeNames:      []sqstypes.QueueAttributeName{sqstypes.QueueAttributeNameAll},
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(out.Messages) == 0 {
+		return "  (no messages)\n", nil
+	}
+	rows := make([][]string, len(out.Messages))
+	for i, m := range out.Messages {
+		body := awssdk.ToString(m.Body)
+		if len(body) > 60 {
+			body = body[:60] + "…"
+		}
+		receiveCount := m.Attributes[string(sqstypes.MessageSystemAttributeNameApproximateReceiveCount)]
+		rows[i] = []string{awssdk.ToString(m.MessageId), tviewEscape(body), receiveCount}
+	}
+	return Table([]string{"Message ID", "Body", "Approx. Receive Count"}, rows), nil
 }
 
 func formatSeconds(s string) string {

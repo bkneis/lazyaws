@@ -38,6 +38,10 @@ func (s *stubSQS) GetQueueAttributes(_ context.Context, _ *sqs.GetQueueAttribute
 	return &sqs.GetQueueAttributesOutput{Attributes: attrs}, nil
 }
 
+func (s *stubSQS) ReceiveMessage(_ context.Context, _ *sqs.ReceiveMessageInput, _ ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error) {
+	return &sqs.ReceiveMessageOutput{}, nil
+}
+
 // stubSQSGetAttrErr returns an error from GetQueueAttributes.
 type stubSQSGetAttrErr struct{ err error }
 
@@ -47,6 +51,10 @@ func (s *stubSQSGetAttrErr) ListQueues(_ context.Context, _ *sqs.ListQueuesInput
 
 func (s *stubSQSGetAttrErr) GetQueueAttributes(_ context.Context, _ *sqs.GetQueueAttributesInput, _ ...func(*sqs.Options)) (*sqs.GetQueueAttributesOutput, error) {
 	return nil, s.err
+}
+
+func (s *stubSQSGetAttrErr) ReceiveMessage(_ context.Context, _ *sqs.ReceiveMessageInput, _ ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error) {
+	return &sqs.ReceiveMessageOutput{}, nil
 }
 
 func TestSQSProvider_FetchItem(t *testing.T) {
@@ -149,11 +157,15 @@ func (s *stubSQSFilter) GetQueueAttributes(_ context.Context, _ *sqs.GetQueueAtt
 	return &sqs.GetQueueAttributesOutput{Attributes: map[string]string{}}, nil
 }
 
+func (s *stubSQSFilter) ReceiveMessage(_ context.Context, _ *sqs.ReceiveMessageInput, _ ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error) {
+	return &sqs.ReceiveMessageOutput{}, nil
+}
+
 func TestSQSProvider_Tabs(t *testing.T) {
 	p := awspkg.NewSQSProviderWithClient(&stubSQS{})
 	tabs := p.Tabs()
-	if len(tabs) != 3 {
-		t.Fatalf("got %d tabs, want 3", len(tabs))
+	if len(tabs) != 4 {
+		t.Fatalf("got %d tabs, want 4", len(tabs))
 	}
 	item := awspkg.Item{ID: "https://sqs.us-east-1.amazonaws.com/123/order-queue", Name: "order-queue"}
 
@@ -165,6 +177,7 @@ func TestSQSProvider_Tabs(t *testing.T) {
 		{0, "Overview", "42"},
 		{1, "Config", "30s"},
 		{2, "DLQ", "(no dead-letter queue configured)"},
+		{3, "Messages", "(no messages)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {

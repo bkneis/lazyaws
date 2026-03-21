@@ -100,7 +100,16 @@ func (p *SNSProvider) tabSubscriptions(ctx context.Context, item Item) (string, 
 	}
 	rows := make([][]string, len(out.Subscriptions))
 	for i, s := range out.Subscriptions {
-		rows[i] = []string{awssdk.ToString(s.Protocol), awssdk.ToString(s.Endpoint), subscriptionStatus(s)}
+		endpoint := awssdk.ToString(s.Endpoint)
+		displayEndpoint := tviewEscape(endpoint)
+		switch awssdk.ToString(s.Protocol) {
+		case "sqs":
+			displayEndpoint = Link(arnLastSegment(endpoint), "SQS", arnToSQSURL(endpoint))
+		case "lambda":
+			name := arnLastSegment(endpoint)
+			displayEndpoint = Link(name, "Lambda", name)
+		}
+		rows[i] = []string{awssdk.ToString(s.Protocol), displayEndpoint, subscriptionStatus(s)}
 	}
 	return Table([]string{"Protocol", "Endpoint", "Status"}, rows), nil
 }
