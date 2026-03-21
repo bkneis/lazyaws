@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	awspkg "github.com/bryanl/lazyaws/internal/aws"
 	"github.com/bryanl/lazyaws/internal/ui"
@@ -27,9 +28,16 @@ func setupLog() (*os.File, error) {
 }
 
 func main() {
-	local        := flag.Bool("local", false, "point at LocalStack (http://localhost:4566)")
+	local         := flag.Bool("local", false, "point at LocalStack (http://localhost:4566)")
 	entrypointURL := flag.String("entrypoint-url", "", "custom endpoint URL, e.g. http://localhost:4566")
+	services      := flag.String("services", "", "comma-separated services to show, e.g. s3,sns,lambda")
+	showVersion   := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("lazyaws %s\n", version)
+		os.Exit(0)
+	}
 
 	logFile, err := setupLog()
 	if err != nil {
@@ -52,6 +60,9 @@ func main() {
 	}
 
 	theme := ui.DetectTheme()
+	if t := ui.LoadConfigTheme(theme); t != nil {
+		theme = *t
+	}
 	awspkg.ActiveTags = awspkg.ColorTags{Header: theme.HeaderTag, Link: theme.LinkTag}
 
 	providers := []awspkg.Provider{
@@ -81,6 +92,20 @@ func main() {
 		awspkg.NewELBProvider(cfg, endpointURL),
 		awspkg.NewASGProvider(cfg, endpointURL),
 		awspkg.NewRDSProvider(cfg, endpointURL),
+	}
+
+	if *services != "" {
+		allowed := map[string]bool{}
+		for _, s := range strings.Split(*services, ",") {
+			allowed[strings.ToLower(strings.TrimSpace(s))] = true
+		}
+		filtered := providers[:0]
+		for _, p := range providers {
+			if allowed[strings.ToLower(p.Name())] {
+				filtered = append(filtered, p)
+			}
+		}
+		providers = filtered
 	}
 
 	app := ui.NewApp(providers, theme)

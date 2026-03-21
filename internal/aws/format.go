@@ -72,12 +72,15 @@ func Table(headers []string, rows [][]string) string {
 		sb.WriteString("  ")
 		for i, cell := range row {
 			if i < len(widths) {
+				if i > 0 {
+					sb.WriteString("[-:-:-]")
+				}
 				sb.WriteString(cell)
 				pad := widths[i] + 2 - displayLen(cell)
 				if pad > 0 {
 					sb.WriteString(strings.Repeat(" ", pad))
 				}
-				sb.WriteString("[-::-]")
+				sb.WriteString("[-:-:-]")
 			}
 		}
 		sb.WriteString("\n")
@@ -106,7 +109,7 @@ func IsSensitiveKey(k string) bool {
 // Link returns a styled cross-resource link. Navigation metadata is embedded
 // as \x02provider:targetID\x03 (stripped before display, parsed for navigation).
 func Link(label, providerName, targetID string) string {
-	return "\x02" + providerName + ":" + targetID + "\x03" + ActiveTags.Link + label + "[-::-]"
+	return "\x02" + providerName + ":" + targetID + "\x03" + ActiveTags.Link + label + "[-:-:-]"
 }
 
 // arnLastSegment returns the resource name from an ARN.

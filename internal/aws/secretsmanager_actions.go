@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
@@ -67,6 +68,42 @@ func (p *SMProvider) Actions(item Item) []ActionDef {
 							ac.Refresh()
 						}()
 					})
+					return nil
+				},
+			},
+			ActionDef{
+				Label: "Delete key",
+				Key:   'k',
+				Func: func(ctx context.Context, item Item, ac ActionContext) error {
+					go func() {
+						out, err := wc.GetSecretValue(context.Background(), &secretsmanager.GetSecretValueInput{
+							SecretId: awssdk.String(item.ID),
+						})
+						if err != nil {
+							ac.ShowError(err)
+							return
+						}
+						var m map[string]any
+						if json.Unmarshal([]byte(awssdk.ToString(out.SecretString)), &m) != nil {
+							ac.ShowError(fmt.Errorf("secret is not JSON"))
+							return
+						}
+						ac.PromptInput("Key to delete", "", func(key string) {
+							go func() {
+								delete(m, key)
+								b, _ := json.Marshal(m)
+								_, err := wc.PutSecretValue(context.Background(), &secretsmanager.PutSecretValueInput{
+									SecretId:     awssdk.String(item.ID),
+									SecretString: awssdk.String(string(b)),
+								})
+								if err != nil {
+									ac.ShowError(err)
+									return
+								}
+								ac.Refresh()
+							}()
+						})
+					}()
 					return nil
 				},
 			},
