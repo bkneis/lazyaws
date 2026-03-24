@@ -52,7 +52,7 @@ brews:
     install: |
       bin.install "lazyaws"
 
-scoos:
+scoops:
   - name: lazyaws
     repository:
       owner: bkneis
