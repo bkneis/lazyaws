@@ -19,7 +19,7 @@
 ---
 
 <p align="center">
-  <img src="demo2.gif" alt="lazyaws demo" width="900"/>
+  <img src="demo.gif" alt="lazyaws demo" width="900"/>
 </p>
 
 ---
