@@ -107,13 +107,3 @@ docker_manifests:
       - "bkneis/lazyaws:latest-amd64"
       - "bkneis/lazyaws:latest-arm64"
 
-snapcrafts:
-  - name: lazyaws
-    publish: false
-    summary: Terminal UI for browsing AWS resources
-    description: |
-      lazyaws is a lazygit/lazydocker-style TUI for navigating AWS resources.
-      Supports S3, Lambda, DynamoDB, EC2, CloudWatch Logs, and more.
-    confinement: classic
-    grade: stable
-    base: bare
