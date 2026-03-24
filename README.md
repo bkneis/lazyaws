@@ -90,19 +90,19 @@ AWS credentials are loaded from the standard chain (`AWS_*` environment variable
 
 ## Cool Features
 
+- **Cloudwatch Logs Viewer** with multi-group streaming and JSON support
+- **S3 Explorer** with ability to view/edit text & json files and download items
+- **DynamoDB Browser** for viewing / inserting JSON
+- **Completely Clickable TUI** mouse support, no need to learn keyboard shortcuts
+- **Actions Menu** (`x`) for interactive commands: send SQS/SNS messages, invoke Lambda functions, create snapshots, and more
+- **Copy and Paste Capability** by switching mouse mode using (M)
+- **Cross Resource Links** — resource arns are clickable and underlined to jump to that resource
+- **Connect to EC2 Instances** via SSH or AWS SSM Session Manager directly from the list
+- **Launch a DB Shell** for RDS instances — infers `psql` or `mysql` connection string from instance details
+- **Exec into ECS Containers** via `aws ecs execute-command`
 - Fast grep like search across your infrastucture using `/`
-- Cloudwatch Logs Viewer with multi-group streaming and JSON support
-- S3 Explorer with ability to view/edit text & json files and download items
-- DynamoDB browser
-- Actions menu (`x`) for interactive commands: send SQS/SNS messages, invoke Lambda functions, create snapshots, and more
-- Cross resource linking — click underlined hyperlinks in resource details to jump to that resource
-- **Connect to EC2 instances** via SSH or AWS SSM Session Manager directly from the list
-- **Launch a DB shell** for RDS instances — infers `psql` or `mysql` connection string from instance details
-- **Exec into ECS containers** via `aws ecs execute-command`
-- Completely clickable TUI — mouse support, no need to learn keyboard shortcuts
 - Single binary ~28mb that works across Windows, Linux and Mac 32/64bit
 - Doesn't require the AWS CLI to be installed — built entirely on the Go AWS SDK using your local credentials
-- Copy and Paste capability by switching mouse mode using (M)
 
 ---
 
