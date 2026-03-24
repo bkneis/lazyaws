@@ -79,8 +79,8 @@ nfpms:
 
 dockers:
   - image_templates:
-      - "bkneis/lazyaws:{{ .Version }}-amd64"
-      - "bkneis/lazyaws:latest-amd64"
+      - "bkneis2025/lazyaws:{{ .Version }}-amd64"
+      - "bkneis2025/lazyaws:latest-amd64"
     use: buildx
     goos: linux
     goarch: amd64
@@ -88,8 +88,8 @@ dockers:
     build_flag_templates:
       - "--platform=linux/amd64"
   - image_templates:
-      - "bkneis/lazyaws:{{ .Version }}-arm64"
-      - "bkneis/lazyaws:latest-arm64"
+      - "bkneis2025/lazyaws:{{ .Version }}-arm64"
+      - "bkneis2025/lazyaws:latest-arm64"
     use: buildx
     goos: linux
     goarch: arm64
@@ -98,12 +98,12 @@ dockers:
       - "--platform=linux/arm64"
 
 docker_manifests:
-  - name_template: "bkneis/lazyaws:{{ .Version }}"
+  - name_template: "bkneis2025/lazyaws:{{ .Version }}"
     image_templates:
-      - "bkneis/lazyaws:{{ .Version }}-amd64"
-      - "bkneis/lazyaws:{{ .Version }}-arm64"
-  - name_template: "bkneis/lazyaws:latest"
+      - "bkneis2025/lazyaws:{{ .Version }}-amd64"
+      - "bkneis2025/lazyaws:{{ .Version }}-arm64"
+  - name_template: "bkneis2025/lazyaws:latest"
     image_templates:
-      - "bkneis/lazyaws:latest-amd64"
-      - "bkneis/lazyaws:latest-arm64"
+      - "bkneis2025/lazyaws:latest-amd64"
+      - "bkneis2025/lazyaws:latest-arm64"
 

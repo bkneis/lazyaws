@@ -13,7 +13,7 @@
   <a href="https://pkg.go.dev/github.com/bkneis/lazyaws"><img src="https://img.shields.io/badge/go-reference-FF9900" alt="go reference"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/bkneis/lazyaws?color=FF9900" alt="MIT license"></a>
   <a href="https://github.com/bkneis/lazyaws/actions"><img src="https://img.shields.io/github/actions/workflow/status/bkneis/lazyaws/test.yml?label=tests" alt="tests"></a>
-  <a href="https://hub.docker.com/r/bkneis/lazyaws"><img src="https://img.shields.io/docker/pulls/bkneis/lazyaws" alt="Docker Pulls"></a>
+  <a href="https://hub.docker.com/r/bkneis/lazyaws"><img src="https://img.shields.io/docker/pulls/bkneis2025/lazyaws" alt="Docker Pulls"></a>
 </p>
 
 ---
@@ -69,7 +69,7 @@ alias lazyaws=$(docker run --rm -it \
   -e AWS_ACCESS_KEY_ID \
   -e AWS_SECRET_ACCESS_KEY \
   -e AWS_DEFAULT_REGION \
-  bkneis/lazyaws)
+  bkneis2025/lazyaws)
 ```
 
 For LocalStack, pass `--network host -e AWS_ENDPOINT_URL=http://localhost:4566`.
