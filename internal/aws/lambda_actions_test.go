@@ -60,7 +60,8 @@ func (s *stubActionContext) ShowError(err error) {
 
 func (s *stubActionContext) ShowInfo(_ string) {}
 
-func (s *stubActionContext) Refresh() { s.refreshed = true }
+func (s *stubActionContext) Refresh()                { s.refreshed = true }
+func (s *stubActionContext) RefreshKeepSelection()   { s.refreshed = true }
 
 func (s *stubActionContext) OpenMultiGroupPicker(_ func([]string)) {}
 func (s *stubActionContext) SuspendAndRun(fn func())               { fn() }

@@ -5,7 +5,6 @@
 <p align="center">
   A terminal UI for managing AWS resources — inspired by
   <a href="https://github.com/jesseduffield/lazydocker">lazydocker</a>,
-  <a href="https://github.com/derailed/k9s">k9s</a> and
   <a href="https://github.com/jesseduffield/lazygit">lazygit</a>.
 </p>
 
@@ -29,7 +28,7 @@ The aim of this project is to make it easier to navigate, observe and manage you
 
 ## Why
 
-The AWS CLI is powerful but slow for exploratory workflows. Finding a Lambda's env vars, checking a CloudFormation stack's outputs, or inspecting an SQS queue means multiple commands with long argument lists.
+The AWS CLI is powerful but slow for exploratory workflows. Finding a Lambda's env vars or inspecting an SQS queue can require multiple commands with long argument lists.
 
 `lazyaws` puts all of that in a three-panel TUI you can navigate in seconds — no flags to remember, no context-switching to the browser console and waiting for static assets to load.
 
@@ -61,11 +60,11 @@ scoop install lazyaws
 
 **Docker (all platforms)**
 ```bash
-docker run --rm -it \
+alias lazyaws=$(docker run --rm -it \
   -e AWS_ACCESS_KEY_ID \
   -e AWS_SECRET_ACCESS_KEY \
   -e AWS_DEFAULT_REGION \
-  bkneis/lazyaws
+  bkneis/lazyaws)
 ```
 
 For LocalStack, pass `--network host -e AWS_ENDPOINT_URL=http://localhost:4566`.
@@ -92,15 +91,14 @@ AWS credentials are loaded from the standard chain (`AWS_*` environment variable
 ## Cool Features
 
 - Fast grep like search across your infrastucture using `/`
-- Cloudwatch Logs Viewer with live tail and multi-group streaming
-- S3 Explorer with ability to view text / json files and download items
-- DynamoDB browser for easily inspecting JSON objects
-- Actions menu (`x`) for interactive commands: upload files to S3, send SQS/SNS messages, invoke Lambda functions, create snapshots, and more
+- Cloudwatch Logs Viewer with multi-group streaming and JSON support
+- S3 Explorer with ability to view/edit text & json files and download items
+- DynamoDB browser
+- Actions menu (`x`) for interactive commands: send SQS/SNS messages, invoke Lambda functions, create snapshots, and more
 - Cross resource linking — click underlined hyperlinks in resource details to jump to that resource
 - **Connect to EC2 instances** via SSH or AWS SSM Session Manager directly from the list
 - **Launch a DB shell** for RDS instances — infers `psql` or `mysql` connection string from instance details
 - **Exec into ECS containers** via `aws ecs execute-command`
-- Point it at any AWS control plane such as LocalStack using `--entrypoint-url`
 - Completely clickable TUI — mouse support, no need to learn keyboard shortcuts
 - Single binary ~28mb that works across Windows, Linux and Mac 32/64bit
 - Doesn't require the AWS CLI to be installed — built entirely on the Go AWS SDK using your local credentials

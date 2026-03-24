@@ -126,7 +126,7 @@ func (p *DynamoDBProvider) Actions(item Item) []ActionDef {
 								ac.ShowError(err)
 								return
 							}
-							ac.Refresh()
+							ac.RefreshKeepSelection()
 						}()
 					})
 					return nil

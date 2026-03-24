@@ -126,6 +126,15 @@ func (ac *appActionContext) Refresh() {
 	})
 }
 
+// RefreshKeepSelection reloads the active provider's item list and re-selects
+// the item that was selected at the time this method was called.
+func (ac *appActionContext) RefreshKeepSelection() {
+	ac.app.tapp.QueueUpdateDraw(func() {
+		ac.app.preferSelectID = ac.app.currentItem.ID
+		ac.app.refresh()
+	})
+}
+
 // SuspendAndRun suspends the TUI, runs fn synchronously, then resumes.
 func (ac *appActionContext) SuspendAndRun(fn func()) {
 	ac.app.tapp.Suspend(fn)

@@ -65,17 +65,20 @@ type App struct {
 	selectedShardRow    int
 	currentRegion       string
 	rebuildFn           func(string) []awspkg.Provider
-	mouseEnabled bool         // true = app handles mouse events; false = OS terminal handles (enables text selection)
-	screen       tcell.Screen // captured on first draw via SetBeforeDrawFunc
+	preferSelectID string      // if non-empty, loadItems selects this item ID instead of the first
+	mouseEnabled   bool        // true = app handles mouse events; false = OS terminal handles (enables text selection)
+	screen         tcell.Screen // captured on first draw via SetBeforeDrawFunc
 	// CW Logs live tail state
 	cachedCWLogStreams  []awspkg.CWLogStreamRow
 	selectedCWStreamRow int
 	cwTailEvents        []cwTailEvent
 	cwTailCancel        context.CancelFunc
-	cwTailGroups        []string    // non-nil + non-empty means multi-group tail is active
-	cwTailJSONMode      bool        // true = JSON collapse/expand mode active
+	cwTailGroups        []string     // non-nil + non-empty means multi-group tail is active
+	cwTailJSONMode      bool         // true = JSON collapse/expand mode active
 	cwTailExpanded      map[int]bool // event index → expanded (nil until first toggle)
 	cwTailLineMap       []int        // content row → event index; -1 = non-clickable
+	cwTailFilter        string       // current in-memory filter on tail events; "" = no filter
+	cwTailFilterMode    bool         // true = / was pressed while tail tab is active
 }
 
 type cwTailEvent struct {
@@ -121,9 +124,17 @@ func (a *App) build() {
 	a.panels.searchInput.SetDoneFunc(func(key tcell.Key) {
 		switch key {
 		case tcell.KeyEnter:
-			a.executeSearch(a.panels.searchInput.GetText())
+			if a.cwTailFilterMode {
+				a.executeTailFilter(a.panels.searchInput.GetText())
+			} else {
+				a.executeSearch(a.panels.searchInput.GetText())
+			}
 		case tcell.KeyEscape:
-			a.clearSearch()
+			if a.cwTailFilterMode {
+				a.clearTailFilter()
+			} else {
+				a.clearSearch()
+			}
 		}
 	})
 
@@ -281,6 +292,8 @@ func (a *App) loadItems(i int, query string) {
 	a.cwTailGroups = nil
 	a.cachedCWLogStreams = nil
 	a.selectedCWStreamRow = 0
+	a.cwTailFilter = ""
+	a.cwTailFilterMode = false
 	a.tabLoaded = nil
 	a.tabCache = nil
 	a.tabRawCache = nil
@@ -317,7 +330,18 @@ func (a *App) loadItems(i int, query string) {
 			if len(items) > 0 {
 				a.panels.focused = 1
 				a.tapp.SetFocus(a.panels.items)
-				a.selectItem(i, items[0])
+				selectTarget := items[0]
+				if a.preferSelectID != "" {
+					for idx, it := range items {
+						if it.ID == a.preferSelectID {
+							selectTarget = it
+							a.panels.items.SetCurrentItem(idx)
+							break
+						}
+					}
+				}
+				a.preferSelectID = ""
+				a.selectItem(i, selectTarget)
 			}
 		})
 	}()
@@ -349,6 +373,29 @@ func (a *App) clearSearch() {
 	a.restoreFocus()
 }
 
+// executeTailFilter applies an in-memory filter to the CW Logs tail events.
+func (a *App) executeTailFilter(query string) {
+	a.cwTailFilterMode = false
+	a.panels.searchInput.SetText("")
+	a.panels.statusPages.SwitchToPage("hints")
+	a.cwTailFilter = query
+	ht := a.theme.HeaderTag
+	a.panels.status.SetText(" " + ht + "filter:[-] " + query + "   " + ht + "esc[-]: clear")
+	a.panels.detail.SetText(a.renderCWLogTail())
+	a.restoreFocus()
+}
+
+// clearTailFilter removes the in-memory tail filter and re-renders the tail view.
+func (a *App) clearTailFilter() {
+	a.cwTailFilterMode = false
+	a.cwTailFilter = ""
+	a.panels.searchInput.SetText("")
+	a.panels.statusPages.SwitchToPage("hints")
+	a.resetHints()
+	a.panels.detail.SetText(a.renderCWLogTail())
+	a.restoreFocus()
+}
+
 // resetHints restores the status bar to the default key-binding hints.
 func (a *App) resetHints() {
 	a.panels.status.SetText(a.panels.hintsText)
@@ -366,6 +413,8 @@ func (a *App) selectItem(providerIdx int, item awspkg.Item) {
 	a.cwTailGroups = nil
 	a.cachedCWLogStreams = nil
 	a.selectedCWStreamRow = 0
+	a.cwTailFilter = ""
+	a.cwTailFilterMode = false
 	a.currentItem = item
 	a.activeTab = 0
 	a.selectedObjectRow = 0
@@ -1330,20 +1379,36 @@ func (a *App) renderCWLogTail() string {
 		status = "idle"
 	}
 	writeLine(fmt.Sprintf("  %sStatus%s  %s\n", ht, "[-]", status))
+	if a.cwTailFilter != "" {
+		writeLine(fmt.Sprintf("  %sFilter%s  %s\n", ht, "[-]", a.cwTailFilter))
+	}
 	writeLine("\n")
 
+	// Apply in-memory filter before rendering.
+	events := a.cwTailEvents
+	if a.cwTailFilter != "" {
+		fq := strings.ToLower(a.cwTailFilter)
+		filtered := make([]cwTailEvent, 0, len(events))
+		for _, ev := range events {
+			if strings.Contains(strings.ToLower(ev.msg), fq) {
+				filtered = append(filtered, ev)
+			}
+		}
+		events = filtered
+	}
+
 	// Rebuild line→event index map on every render.
-	lineMap := make([]int, 0, lineCount+len(a.cwTailEvents)*2)
+	lineMap := make([]int, 0, lineCount+len(events)*2)
 	for i := 0; i < lineCount; i++ {
 		lineMap = append(lineMap, -1) // header lines are not clickable
 	}
 
-	if len(a.cwTailEvents) == 0 && a.cwTailCancel != nil {
+	if len(events) == 0 && a.cwTailCancel != nil {
 		writeLine("  Waiting for events…\n")
 		lineMap = append(lineMap, -1)
 	}
 
-	for idx, ev := range a.cwTailEvents {
+	for idx, ev := range events {
 		ts := ev.ts.UTC().Format("15:04:05")
 		sep := "  "
 		if len(a.cwTailGroups) > 1 {

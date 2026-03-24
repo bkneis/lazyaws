@@ -58,6 +58,9 @@ func setupKeys(a *App) {
 			a.openActionsMenu()
 			return nil
 		case '/':
+			if a.isCWLogsTailActive() {
+				a.cwTailFilterMode = true
+			}
 			a.enterSearch()
 			return nil
 		case 'q':

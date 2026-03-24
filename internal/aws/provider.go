@@ -81,6 +81,9 @@ type ActionContext interface {
 	ShowInfo(message string)
 	// Refresh reloads the current provider's item list.
 	Refresh()
+	// RefreshKeepSelection reloads the current provider's item list and re-selects
+	// the same item that was selected before the reload.
+	RefreshKeepSelection()
 	// OpenMultiGroupPicker opens a multi-select modal showing all loaded log groups.
 	// onConfirm is called with the confirmed selection; the App activates the Tail tab.
 	OpenMultiGroupPicker(onConfirm func(selected []string))
