@@ -34,11 +34,16 @@ The AWS CLI is powerful but slow for exploratory workflows. Finding a Lambda's e
 
 It pairs naturally with **LocalStack-based development**: run `lazyaws -local` or `lazyaws -entrypoint-url=<aws control plane>` to inspect your emulated AWS environment in real time, the same way you'd use `lazydocker` to inspect containers.
 
-My typicaly workflow while using AI tools like claude include providing verification loops such as restarting a localstack container and re deploying cloudformation templates to fix infrastructure issues. With lazyaws, you can easily observe this in real time while the agent is working. Or if an integration test fails, and leaves the resources deployed, it can be inspected quickly and easily without leaving the terminal.
-
 ## Install
 
-**macOS / Linux**
+**Script (macOS / Linux — one-liner)**
+```bash
+curl -fsSL https://raw.githubusercontent.com/bkneis/lazyaws/main/install.sh | bash
+```
+
+Detects your OS and architecture, downloads the latest release binary, verifies the SHA256 checksum, and installs to `/usr/local/bin` (or `~/.local/bin` as a fallback).
+
+**macOS / Linux (Homebrew)**
 ```bash
 brew install bkneis/lazyaws/lazyaws
 ```
