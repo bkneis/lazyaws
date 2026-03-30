@@ -12,8 +12,8 @@
   <a href="https://github.com/bkneis/lazyaws/releases"><img src="https://img.shields.io/github/v/release/bkneis/lazyaws?color=FF9900&label=release" alt="release"></a>
   <a href="https://pkg.go.dev/github.com/bkneis/lazyaws"><img src="https://img.shields.io/badge/go-reference-FF9900" alt="go reference"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/bkneis/lazyaws?color=FF9900" alt="MIT license"></a>
-  <a href="https://github.com/bkneis/lazyaws/actions"><img src="https://img.shields.io/github/actions/workflow/status/bkneis/lazyaws/test.yml?label=tests" alt="tests"></a>
-  <a href="https://hub.docker.com/r/bkneis/lazyaws"><img src="https://img.shields.io/docker/pulls/bkneis2025/lazyaws" alt="Docker Pulls"></a>
+  <a href="https://github.com/bkneis/lazyaws/actions"><img src="https://img.shields.io/github/actions/workflow/status/bkneis/lazyaws/ci.yml?label=test" alt="tests"></a>
+  <a href="https://hub.docker.com/r/bkneis2025/lazyaws"><img src="https://img.shields.io/docker/pulls/bkneis2025/lazyaws" alt="Docker Pulls"></a>
 </p>
 
 ---
